@@ -7,6 +7,7 @@ import type {
 } from "./internal-types.js";
 import { buildSnapshotSourceRef } from "./provenance.js";
 import { replaySource } from "./snapshot-store.js";
+import { discoverSitemapUrls } from "./sitemap.js";
 import {
   InvalidCrawlConfigError,
   type CrawlManifest,
@@ -198,11 +199,7 @@ export async function crawlWithOptions(
   const egress = policy.egress ?? { guarded: true };
   const warnings: string[] = [];
 
-  if (policy.discovery === "sitemap" || policy.discovery === "both") {
-    warnings.push(
-      "discovery includes sitemap, which is deferred in this MVP; link discovery remains available for 'both'",
-    );
-  }
+  const discovery = policy.discovery ?? "links";
   const linksEnabled = policy.discovery !== "sitemap";
   if (policy.render === "on-shell" || policy.render === "always" || seed.render) {
     warnings.push(
@@ -228,6 +225,35 @@ export async function crawlWithOptions(
   };
   const queue: FrontierEntry[] = [{ url: seedUrl, depth: 0 }];
   const seen = new Set([seedUrl]);
+  let sitemap: CrawlManifest["sitemap"];
+  if (discovery === "sitemap" || discovery === "both") {
+    sitemap = { documentsRead: 0, urlsDiscovered: 0 };
+    if (maxPages > 1 && maxDepth >= 1) {
+      try {
+        const result = await discoverSitemapUrls(
+          seed,
+          parsedSeed,
+          policy,
+          fetchOptions,
+          maxPages,
+        );
+        sitemap = {
+          documentsRead: result.documentsRead,
+          urlsDiscovered: result.urls.length,
+        };
+        warnings.push(...result.warnings);
+        for (const url of result.urls) {
+          if (seen.has(url)) continue;
+          seen.add(url);
+          queue.push({ url, depth: 1 });
+        }
+      } catch (error) {
+        warnings.push(
+          `sitemap discovery failed unexpectedly (${error instanceof Error ? error.message : String(error)}); continuing`,
+        );
+      }
+    }
+  }
   const pages: Page[] = [];
   let attempts = 0;
 
@@ -326,7 +352,13 @@ export async function crawlWithOptions(
       `maxPages cap (${maxPages}) reached; ${queue.length} further URL(s) discovered but not fetched`,
     );
   }
-  return { seed: seedUrl, pages, truncated, warnings };
+  return {
+    seed: seedUrl,
+    pages,
+    truncated,
+    warnings,
+    ...(sitemap ? { sitemap } : {}),
+  };
 }
 
 /** Public crawl entrypoint. Network injection is intentionally not exposed. */

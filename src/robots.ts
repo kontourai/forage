@@ -13,6 +13,7 @@ interface RawGroup {
 
 export function parseRobots(text: string, userAgent: string): RobotsRules {
   const groups: RawGroup[] = [];
+  const sitemaps: string[] = [];
   let current: RawGroup | null = null;
   let sawRuleForCurrent = false;
 
@@ -23,7 +24,9 @@ export function parseRobots(text: string, userAgent: string): RobotsRules {
     if (index === -1) continue;
     const field = line.slice(0, index).trim().toLowerCase();
     const value = line.slice(index + 1).trim();
-    if (field === "user-agent") {
+    if (field === "sitemap") {
+      if (value) sitemaps.push(value);
+    } else if (field === "user-agent") {
       if (!current || sawRuleForCurrent) {
         current = { agents: [], rules: [] };
         groups.push(current);
@@ -53,7 +56,7 @@ export function parseRobots(text: string, userAgent: string): RobotsRules {
       }
     }
   }
-  return { rules: best ? best.rules : [] };
+  return { rules: best ? best.rules : [], sitemaps };
 }
 
 export function isPathAllowed(

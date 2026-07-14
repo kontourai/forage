@@ -142,7 +142,7 @@ async function loadRobots(
     resolved,
   );
   if (error || !response) {
-    const rules = { rules: [] };
+    const rules: RobotsRules = { rules: [], sitemaps: [] };
     resolved.robotsCache.set(origin, rules);
     return {
       rules,
@@ -150,7 +150,7 @@ async function loadRobots(
     };
   }
   if (response.status >= 500 || response.status === 429) {
-    const rules = { rules: [] };
+    const rules: RobotsRules = { rules: [], sitemaps: [] };
     resolved.robotsCache.set(origin, rules);
     return {
       rules,
@@ -158,7 +158,7 @@ async function loadRobots(
     };
   }
   if (response.status >= 400) {
-    const rules = { rules: [] };
+    const rules: RobotsRules = { rules: [], sitemaps: [] };
     resolved.robotsCache.set(origin, rules);
     return { rules };
   }

@@ -62,9 +62,10 @@ for (const page of manifest.pages) {
 
 ## MVP policy support
 
-The current crawler implements `discovery: "links"` and `render: "never"`.
-`discovery: "both"` still performs link discovery but warns that sitemap
-discovery is deferred; `discovery: "sitemap"` performs no discovery and warns.
+The current crawler implements `discovery: "links"`, `"sitemap"`, and `"both"`.
+Sitemap discovery reads seed-host `Sitemap:` directives (falling back to
+`/sitemap.xml`), supports bounded nested indexes and gzip files, and reports
+`manifest.sitemap.documentsRead` plus `manifest.sitemap.urlsDiscovered`.
 `render: "on-shell"`, `render: "always"`, and `Seed.render: true` currently use
 plain HTTP and emit an explicit warning. `shouldFollow` scoring and frontier
 concurrency are likewise accepted as forward-compatible seams but warn and use
