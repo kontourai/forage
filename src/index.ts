@@ -5,10 +5,8 @@
  * deterministic replay, and per-page provenance. Survey-neutral — knows nothing
  * about extraction. See README.md / DESIGN.md.
  *
- * This index exports the stable public surface. The implementation is being
- * lifted from traverse/fetch + campfit's egress policy (DESIGN.md "Migration");
- * `crawl` throws `not-implemented` until that lands so the contract is importable
- * and typecheckable now.
+ * The implementation is lifted from traverse/fetch + campfit's egress policy
+ * (DESIGN.md "Migration").
  */
 export type {
   Seed,
@@ -21,21 +19,10 @@ export type {
   DiscoveredLink,
   FrontierContext,
 } from "./types.js";
-
-import type { Seed, CrawlPolicy, CrawlManifest } from "./types.js";
-
-/**
- * Crawl a seed under a policy, returning a bounded, provenance-bearing page set.
- * SSRF-pinned egress and robots/politeness are ON by default.
- *
- * NOT YET IMPLEMENTED — see DESIGN.md. The signature is stable; the frontier +
- * pinned-egress + snapshot implementation lands in the migration.
- */
-export async function crawl(
-  _seed: Seed,
-  _policy: CrawlPolicy = {},
-): Promise<CrawlManifest> {
-  throw new Error(
-    "forage: crawl() is not yet implemented — migration in progress (see DESIGN.md).",
-  );
-}
+export { InvalidCrawlConfigError } from "./types.js";
+export { crawl } from "./crawl.js";
+export {
+  createFilesystemSnapshotStore,
+  createInMemorySnapshotStore,
+} from "./snapshot-store.js";
+export type { FilesystemSnapshotStoreOptions } from "./snapshot-store.js";

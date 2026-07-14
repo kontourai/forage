@@ -9,12 +9,16 @@
 
 /** A durable, byte-identical record of one fetched page (for replay + provenance). */
 export interface Snapshot {
+  /** Stable crawl-owned identity used to group captures in a SnapshotStore. */
+  sourceId: string;
   url: string;
   status: number;
   fetchedAt: string;
   body: string | Uint8Array;
   headers?: Record<string, string>;
   bodyHash: string;
+  /** Ordered URLs visited before `url`, when a same-host redirect occurred. */
+  redirects?: string[];
   rendered?: boolean;
 }
 
@@ -85,4 +89,9 @@ export interface CrawlManifest {
   /** true when the frontier still held undiscovered URLs when maxPages stopped it. */
   truncated: boolean;
   warnings: string[];
+}
+
+/** The only error class crawl() throws: the caller supplied an invalid policy or seed. */
+export class InvalidCrawlConfigError extends TypeError {
+  readonly name = "InvalidCrawlConfigError";
 }

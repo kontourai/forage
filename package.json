@@ -3,8 +3,12 @@
   "version": "0.0.0",
   "description": "Safe, replayable web crawling for review pipelines — a crawler for untrusted URLs.",
   "type": "module",
-  "exports": { ".": "./dist/src/index.js" },
-  "files": ["dist/src"],
+  "exports": {
+    ".": "./dist/src/index.js"
+  },
+  "files": [
+    "dist/src"
+  ],
   "scripts": {
     "build": "rm -rf dist && tsc",
     "test": "npm run build && node --test dist/tests/*.test.js",
@@ -12,5 +16,8 @@
   },
   "license": "UNLICENSED",
   "private": true,
-  "devDependencies": { "typescript": ">=5.0.0" }
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": ">=5.0.0"
+  }
 }
