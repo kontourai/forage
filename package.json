@@ -12,7 +12,11 @@
     "url": "https://github.com/kontourai/forage/issues"
   },
   "exports": {
-    ".": "./dist/src/index.js"
+    ".": "./dist/src/index.js",
+    "./egress": {
+      "types": "./dist/src/egress-index.d.ts",
+      "default": "./dist/src/egress-index.js"
+    }
   },
   "files": [
     "dist/src",
