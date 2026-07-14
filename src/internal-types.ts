@@ -32,8 +32,20 @@ export interface SourceConfig {
   headers?: Record<string, string>;
   userAgent?: string;
   respectRobots?: boolean;
+  /** Render after plain fetch, always or only when the response is a JS shell. */
+  render?: boolean | "on-shell";
   egress: EgressPolicy;
 }
+
+export interface RenderResult {
+  html: string;
+  warnings?: string[];
+}
+
+export type RenderImpl = (
+  url: string,
+  options?: { timeoutMs?: number },
+) => Promise<RenderResult>;
 
 export type FetchLike = (
   url: string,
@@ -60,6 +72,8 @@ export interface FetchSourceOptions {
   politenessState?: Map<string, number>;
   robotsCache?: Map<string, RobotsRules>;
   store?: SnapshotStore;
+  /** Browser transport injection seam. Omit to load forage's optional renderer lazily. */
+  renderImpl?: RenderImpl;
 }
 
 export const DEFAULT_MIN_DELAY_MS = 1_000;

@@ -201,11 +201,6 @@ export async function crawlWithOptions(
 
   const discovery = policy.discovery ?? "links";
   const linksEnabled = policy.discovery !== "sitemap";
-  if (policy.render === "on-shell" || policy.render === "always" || seed.render) {
-    warnings.push(
-      "rendering is deferred in this MVP; pages were acquired with plain HTTP",
-    );
-  }
   if (policy.shouldFollow) {
     warnings.push(
       "shouldFollow scoring is deferred in this MVP; the deterministic host/depth policy was used",
@@ -272,6 +267,14 @@ export async function crawlWithOptions(
             : undefined,
         userAgent: seed.userAgent,
         respectRobots: policy.robots ?? true,
+        render:
+          current.depth === 0 && seed.render
+            ? true
+            : policy.render === "always"
+              ? true
+              : policy.render === "on-shell"
+                ? "on-shell"
+                : false,
         egress,
       };
       const result =
