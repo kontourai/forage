@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Safe, replayable web crawling for review pipelines — a crawler for untrusted URLs.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kontourai/forage.git"
+  },
+  "homepage": "https://github.com/kontourai/forage#readme",
+  "bugs": {
+    "url": "https://github.com/kontourai/forage/issues"
+  },
   "exports": {
     ".": "./dist/src/index.js"
   },
