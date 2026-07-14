@@ -7,15 +7,24 @@
     ".": "./dist/src/index.js"
   },
   "files": [
-    "dist/src"
+    "dist/src",
+    "README.md",
+    "LICENSE"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc",
+    "prepare": "npm run build",
     "test": "npm run build && node --test dist/tests/*.test.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm test"
   },
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "playwright": ">=1.40.0"
   },

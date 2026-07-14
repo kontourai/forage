@@ -1,0 +1,111 @@
+name: Publish NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# Serialize publish runs so a duplicate trigger (the release tag push and a
+# workflow_dispatch firing within seconds of each other) cannot race: the second
+# run waits for the first to finish, then the "Check Published Version" step sees
+# the version already on npm and skips — instead of E403'ing on a double publish.
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['22', '24']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --no-fund --no-audit
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Pack Dry Run
+        run: npm pack --dry-run
+
+  publish:
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --no-fund --no-audit
+
+      - name: Verify Tag Matches Package Version
+        run: |
+          PACKAGE_VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          if [ "v${PACKAGE_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version v${PACKAGE_VERSION}" >&2
+            exit 1
+          fi
+
+      - name: Verify Tagged Commit Is On Main
+        run: |
+          git fetch origin main --depth=1
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "FETCH_HEAD"; then
+            echo "Tagged commit ${GITHUB_SHA} is not reachable from the fetched origin/main tip" >&2
+            exit 1
+          fi
+
+      - name: Check Published Version
+        id: published
+        run: |
+          PACKAGE_NAME=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).name")
+          PACKAGE_VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+            echo "published=true" >> "${GITHUB_OUTPUT}"
+            echo "${PACKAGE_NAME}@${PACKAGE_VERSION} is already published; skipping npm publish."
+          else
+            echo "published=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Build Package
+        if: steps.published.outputs.published != 'true'
+        run: npm run build
+
+      # Token auth via the NPM_TOKEN repo secret (owner adds it: Settings →
+      # Secrets → Actions → NPM_TOKEN). `--provenance` publishes a signed
+      # provenance attestation via the job's OIDC id-token (the repo is public,
+      # which npm provenance requires).
+      - name: Publish
+        if: steps.published.outputs.published != 'true'
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
