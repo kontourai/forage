@@ -1,0 +1,16 @@
+{
+  "name": "@kontourai/forage",
+  "version": "0.0.0",
+  "description": "Safe, replayable web crawling for review pipelines — a crawler for untrusted URLs.",
+  "type": "module",
+  "exports": { ".": "./dist/src/index.js" },
+  "files": ["dist/src"],
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": { "typescript": ">=5.0.0" }
+}

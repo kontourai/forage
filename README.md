@@ -1,0 +1,75 @@
+# forage
+
+**Safe, replayable web crawling for review pipelines — a crawler for _untrusted_ URLs.**
+
+Most crawlers assume *you* pick the sites: trusted seeds, crawl the public web at
+scale, hand the pages downstream. `forage` is for the other job — when the URLs
+come from **somewhere you don't control** (an aggregator's listings, links
+discovered mid-crawl, user submissions) and the pages become **evidence a human
+will review and cite.**
+
+That job sits at the intersection of three tools that normally don't come
+together, and `forage` is that intersection:
+
+- a **crawler** (frontier, robots, politeness, sitemaps, adaptive rendering),
+- a **security proxy** (SSRF + DNS-rebinding-safe egress, on by default), and
+- a **provenance layer** (deterministic snapshots you can replay and cite).
+
+## Why it's different
+
+| | Typical crawler (Scrapy, Crawlee, Colly) | `forage` |
+|---|---|---|
+| Threat model | trusted seeds you choose | **untrusted, attacker-influenced URLs** |
+| SSRF / DNS-rebinding | not addressed (wrong threat model) | **pinned egress by default** — resolve once, validate the IP, freeze it; no rebinding window |
+| Cloud-metadata / internal targets | reachable | **hard-blocked** (169.254.169.254, `10.x`, loopback, link-local, NAT64…) |
+| Re-processing | re-crawl (or ad-hoc HTTP cache) | **deterministic replay** — crawl once, re-extract offline forever |
+| Downstream evidence | URL + timestamp | **per-page `sourceRef`** you can cite in a review UI |
+| AI in the core | — | **none** — pure deterministic mechanics (fast, testable, no model calls) |
+
+The crawling *mechanics* are commodity — `forage` leans on proven ideas and
+focused libraries for those (robots parsing, URL canonicalization, sitemaps,
+Crawlee's adaptive-render pattern). What it **owns** is the rare part: getting
+SSRF-with-rebinding *actually right* (a pin, not just a check — the hole most
+naive SSRF filters still have) and wiring provenance/replay for a human-review
+workflow.
+
+## Safe by default
+
+SSRF protection is **opt-out, never opt-in.** You cannot accidentally ship a
+`forage` crawl that will fetch your cloud metadata endpoint — refusing internal
+targets is the default, and disabling it is an explicit, visible choice.
+
+## Quick start
+
+```ts
+import { crawl } from "@kontourai/forage";
+
+const manifest = await crawl(
+  { url: "https://a-provider-you-dont-fully-trust.example/" },
+  {
+    maxPages: 8,
+    maxDepth: 1,
+    discovery: "both",     // sitemap-first, then same-host links
+    render: "on-shell",    // plain fetch first; render only if the page is a JS shell
+    // egress is SSRF-pinned by default; robots + politeness honored by default
+  },
+);
+
+for (const page of manifest.pages) {
+  console.log(page.url, page.status, page.sourceRef); // cite page.sourceRef downstream
+}
+```
+
+## Where it sits
+
+`campfit → traverse → forage`. Dependencies point only downward; each layer is
+usable alone:
+
+- **forage** — crawling + safe egress + provenance. Knows nothing about extraction.
+- **traverse** — schema-directed extraction (`content + schema → reviewable
+  proposals`). Depends on forage for its fetch/compose convenience.
+- **campfit** — the app: crawl with forage, extract with traverse, review.
+
+See [DESIGN.md](./DESIGN.md) for the public surface, the SSRF/replay rationale,
+and the migration lifting the crawler out of `traverse/fetch` + the egress guard
+out of `campfit`.
