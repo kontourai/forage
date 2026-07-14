@@ -16,6 +16,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   verify:
@@ -100,12 +101,10 @@ jobs:
         if: steps.published.outputs.published != 'true'
         run: npm run build
 
-      # Token auth via the NPM_TOKEN repo secret (owner adds it: Settings →
-      # Secrets → Actions → NPM_TOKEN). `--provenance` publishes a signed
-      # provenance attestation via the job's OIDC id-token (the repo is public,
-      # which npm provenance requires).
+      # Trusted publishing: npm authenticates via the job's OIDC id-token — no
+      # NPM_TOKEN secret. Requires a trusted publisher configured on npmjs.com
+      # for @kontourai/forage (this repo + publish-npm.yml). `--provenance`
+      # emits a signed provenance attestation from the same id-token.
       - name: Publish
         if: steps.published.outputs.published != 'true'
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
