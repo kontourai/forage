@@ -44,6 +44,10 @@ interface Page {
 }
 ```
 
+For the MVP, `Snapshot` also carries the stable crawl-owned `sourceId` used by
+`SnapshotStore`, allowing `sourceRef` to resolve the exact stored bytes even
+when the fetched URL redirected.
+
 ## Load-bearing decisions
 
 - **SSRF-pinned egress, default-on.** Resolve the hostname once, validate every

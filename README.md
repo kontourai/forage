@@ -49,8 +49,8 @@ const manifest = await crawl(
   {
     maxPages: 8,
     maxDepth: 1,
-    discovery: "both",     // sitemap-first, then same-host links
-    render: "on-shell",    // plain fetch first; render only if the page is a JS shell
+    discovery: "links",
+    render: "never",
     // egress is SSRF-pinned by default; robots + politeness honored by default
   },
 );
@@ -59,6 +59,16 @@ for (const page of manifest.pages) {
   console.log(page.url, page.status, page.sourceRef); // cite page.sourceRef downstream
 }
 ```
+
+## MVP policy support
+
+The current crawler implements `discovery: "links"` and `render: "never"`.
+`discovery: "both"` still performs link discovery but warns that sitemap
+discovery is deferred; `discovery: "sitemap"` performs no discovery and warns.
+`render: "on-shell"`, `render: "always"`, and `Seed.render: true` currently use
+plain HTTP and emit an explicit warning. `shouldFollow` scoring and frontier
+concurrency are likewise accepted as forward-compatible seams but warn and use
+the deterministic host/depth policy and sequential frontier for this MVP.
 
 ## Where it sits
 
