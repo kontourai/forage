@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/kontourai/forage/compare/v0.1.0...v0.2.0) (2026-07-14)
+
+
+### Features
+
+* export guarded single-URL fetch surface via ./egress subpath ([#11](https://github.com/kontourai/forage/issues/11)) ([47cc8df](https://github.com/kontourai/forage/commit/47cc8df4597380a8c3b5df5595c5b7318d41b175))
+
 ## 0.1.0 (2026-07-14)
 
 
