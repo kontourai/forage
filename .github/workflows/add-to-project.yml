@@ -1,0 +1,16 @@
+name: Add issue to org project
+
+on:
+  issues:
+    types: [opened, reopened, closed]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  add-to-project:
+    uses: kontourai/.github/.github/workflows/add-issue-to-project.yml@main
+    secrets:
+      ADD_TO_PROJECT_PAT: ${{ secrets.ADD_TO_PROJECT_PAT }}
+
