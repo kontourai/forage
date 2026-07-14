@@ -51,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -100,12 +101,11 @@ jobs:
         run: npm run build
 
       # Token auth via the NPM_TOKEN repo secret (owner adds it: Settings →
-      # Secrets → Actions → NPM_TOKEN). `--provenance` is intentionally omitted:
-      # npm provenance requires a PUBLIC source repository, and this repo is
-      # private. Once the repo is made public, add `--provenance` here and
-      # `id-token: write` to this job's permissions to publish signed provenance.
+      # Secrets → Actions → NPM_TOKEN). `--provenance` publishes a signed
+      # provenance attestation via the job's OIDC id-token (the repo is public,
+      # which npm provenance requires).
       - name: Publish
         if: steps.published.outputs.published != 'true'
-        run: npm publish --access public
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
