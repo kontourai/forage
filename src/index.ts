@@ -26,3 +26,16 @@ export {
   createInMemorySnapshotStore,
 } from "./snapshot-store.js";
 export type { FilesystemSnapshotStoreOptions } from "./snapshot-store.js";
+export {
+  createForageRenderImpl,
+  installGuardedPageNetwork,
+  preparePinnedBrowserNavigation,
+} from "./render.js";
+export type {
+  BrowserInstance,
+  BrowserLauncher,
+  BrowserPage,
+  CreateForageRenderImplOptions,
+  PinnedBrowserNavigation,
+} from "./render.js";
+export type { RenderImpl, RenderResult } from "./internal-types.js";

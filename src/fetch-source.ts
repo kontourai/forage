@@ -4,6 +4,7 @@
  */
 import { createHash } from "node:crypto";
 import { EgressUrlPolicyError, createGuardedFetch } from "./egress.js";
+import { createForageRenderImpl } from "./render.js";
 import {
   DEFAULT_MIN_DELAY_MS,
   DEFAULT_RETRIES,
@@ -234,8 +235,71 @@ function isTextual(contentType: string | null): boolean {
   );
 }
 
+function isHtmlContentType(contentType: string | undefined): boolean {
+  return (contentType ?? "").toLowerCase().includes("html");
+}
+
 function withWarnings(result: FetchResult, warnings: string[]): FetchResult {
   return warnings.length ? { ...result, warnings } : result;
+}
+
+/** Conservative adaptive-render trigger: little visible text plus SPA bootstrap evidence. */
+export function looksLikeJavaScriptShell(html: string): boolean {
+  const raw = html.trim();
+  if (!raw) return true;
+  const prepared = raw
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(?:script|style|noscript|svg)\b[\s\S]*?<\/(?:script|style|noscript|svg)>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:nbsp|#160);/gi, " ")
+    .replace(/&[a-z]+;|&#\d+;|&#x[\da-f]+;/gi, "x")
+    .replace(/\s+/g, " ")
+    .trim();
+  const bootstrapMarker = /<(?:script\b|div\b[^>]*\bid=["']?(?:root|app|__next|__nuxt)|body\b[^>]*\b(?:data-reactroot|ng-app)\b)/i
+    .test(raw);
+  return prepared.length <= 160 && (
+    (raw.length >= 200 && prepared.length / raw.length < 0.08) ||
+    (bootstrapMarker && prepared.length <= 80)
+  );
+}
+
+async function maybeRenderSnapshot(
+  config: SourceConfig,
+  options: FetchSourceOptions,
+  plain: Snapshot,
+  requestedUrl: string,
+  timeoutMs: number,
+  warnings: string[],
+): Promise<Snapshot> {
+  if (
+    !config.render ||
+    (config.render === "on-shell" && (
+      typeof plain.body !== "string" ||
+      !isHtmlContentType(plain.headers?.["content-type"]) ||
+      !looksLikeJavaScriptShell(plain.body)
+    ))
+  ) {
+    return plain;
+  }
+  try {
+    const renderImpl = options.renderImpl ?? createForageRenderImpl({
+      testOnlyAllowedLoopbackOrigins:
+        config.egress.testOnlyAllowedLoopbackOrigins,
+    });
+    const rendered = await renderImpl(requestedUrl, { timeoutMs });
+    warnings.push(...(rendered.warnings ?? []));
+    return {
+      ...plain,
+      body: rendered.html,
+      bodyHash: sha256Hex(rendered.html),
+      rendered: true,
+    };
+  } catch (error) {
+    warnings.push(
+      `render failed; kept plain-fetch snapshot (${error instanceof Error ? error.message : String(error)})`,
+    );
+    return plain;
+  }
 }
 
 /** Fetch one source. Operational outcomes are returned, never thrown. */
@@ -300,7 +364,9 @@ export async function fetchSource(
     let currentUrl = startUrl;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       const origin = currentUrl.origin;
-      if (respectRobots) {
+      // A browser acquisition checks robots exactly once for the caller's
+      // requested path. Browser redirects never trigger robots network I/O.
+      if (respectRobots && (!config.render || hop === 0)) {
         const robots = await loadRobots(
           origin,
           userAgent,
@@ -378,7 +444,15 @@ export async function fetchSource(
             warnings,
           );
         }
-        return withWarnings({ snapshot: prior }, warnings);
+        const acquired = await maybeRenderSnapshot(
+          config,
+          options,
+          prior,
+          startUrl.href,
+          timeoutMs,
+          warnings,
+        );
+        return withWarnings({ snapshot: acquired }, warnings);
       }
 
       if (response.status >= 300 && response.status < 400) {
@@ -490,7 +564,15 @@ export async function fetchSource(
           typeof body === "string" ? sha256Hex(body) : sha256Bytes(body),
       };
       if (redirects.length) snapshot.redirects = redirects;
-      return withWarnings({ snapshot }, warnings);
+      const acquired = await maybeRenderSnapshot(
+        config,
+        options,
+        snapshot,
+        startUrl.href,
+        timeoutMs,
+        warnings,
+      );
+      return withWarnings({ snapshot: acquired }, warnings);
     }
     return withWarnings(
       {

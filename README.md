@@ -66,10 +66,13 @@ The current crawler implements `discovery: "links"`, `"sitemap"`, and `"both"`.
 Sitemap discovery reads seed-host `Sitemap:` directives (falling back to
 `/sitemap.xml`), supports bounded nested indexes and gzip files, and reports
 `manifest.sitemap.documentsRead` plus `manifest.sitemap.urlsDiscovered`.
-`render: "on-shell"`, `render: "always"`, and `Seed.render: true` currently use
-plain HTTP and emit an explicit warning. `shouldFollow` scoring and frontier
-concurrency are likewise accepted as forward-compatible seams but warn and use
-the deterministic host/depth policy and sequential frontier for this MVP.
+`render: "on-shell"` escalates empty JavaScript shells from plain HTTP to a
+DNS-pinned browser, while `render: "always"` and `Seed.render: true` request a
+browser for the matching pages. Rendering requires the optional `playwright`
+peer; when it is absent or rendering fails, the plain-fetch snapshot is kept
+with a warning. `shouldFollow` scoring and frontier concurrency remain
+forward-compatible seams that warn and use the deterministic host/depth policy
+and sequential frontier.
 
 ## Where it sits
 
