@@ -25,6 +25,7 @@ export interface EgressResponseOracle {
     status?: number;
     headers?: HeadersInit;
     body?: string;
+    bodyBytes?: number[];
     error?: true;
     urlSuffix?: string;
     whenHeaders?: Record<string, string>;
@@ -411,10 +412,15 @@ export function createGuardedFetch(
         const response = index < 0 ? undefined : oracleResponses[index];
         if (response && !response.repeat) oracleResponses.splice(index, 1);
         if (!response || response.error) throw new Error("fixture oracle failure");
-        return new Response(response.body ?? null, {
-          status: response.status ?? 200,
-          headers: response.headers,
-        });
+        return new Response(
+          response.bodyBytes
+            ? new Uint8Array(response.bodyBytes)
+            : response.body ?? null,
+          {
+            status: response.status ?? 200,
+            headers: response.headers,
+          },
+        );
       }
     : defaultConnector;
   const maxRedirects = options.maxRedirects ?? 5;

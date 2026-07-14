@@ -47,6 +47,7 @@ export type FetchLike = (
 
 export interface RobotsRules {
   rules: Array<{ path: string; allow: boolean }>;
+  sitemaps: string[];
 }
 
 export interface FetchSourceOptions {

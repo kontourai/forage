@@ -89,6 +89,11 @@ export interface CrawlManifest {
   /** true when the frontier still held undiscovered URLs when maxPages stopped it. */
   truncated: boolean;
   warnings: string[];
+  /** Present when sitemap discovery ran. Counts successfully read documents and accepted same-host URLs. */
+  sitemap?: {
+    documentsRead: number;
+    urlsDiscovered: number;
+  };
 }
 
 /** The only error class crawl() throws: the caller supplied an invalid policy or seed. */

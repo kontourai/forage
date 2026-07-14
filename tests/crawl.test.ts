@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it, mock } from "node:test";
+import { gzipSync } from "node:zlib";
 import {
   InvalidCrawlConfigError,
   crawl,
@@ -299,7 +300,7 @@ describe("crawl", () => {
       );
   });
 
-  it("surfaces deferred policy fields as explicit warnings", async () => {
+  it("surfaces genuinely deferred policy fields as explicit warnings", async () => {
     const store = createInMemorySnapshotStore();
     const manifest = await crawl(
       { url: "https://example.test", render: true },
@@ -312,7 +313,11 @@ describe("crawl", () => {
         store,
       },
     );
-    assert.ok(manifest.warnings.length >= 4);
+    assert.ok(manifest.warnings.length >= 3);
+    assert.deepEqual(manifest.sitemap, {
+      documentsRead: 0,
+      urlsDiscovered: 0,
+    });
     assert.equal(manifest.truncated, true);
   });
 
@@ -325,6 +330,296 @@ describe("crawl", () => {
       crawl({ url: "https://example.test" }, { mode: "replay" }),
       InvalidCrawlConfigError,
     );
+  });
+});
+
+describe("sitemap discovery", () => {
+  const openRobots = {
+    urlSuffix: "/robots.txt",
+    body: "User-agent: *\nDisallow:\n",
+    headers: { "content-type": "text/plain" },
+  } as const;
+  const html = (urlSuffix: string, body = "<p>fixture</p>") => ({
+    urlSuffix,
+    body,
+    headers: { "content-type": "text/html" },
+  });
+  const sitemapPolicy = (overrides: Record<string, unknown> = {}) => ({
+    maxPages: 10,
+    maxDepth: 1,
+    discovery: "sitemap" as const,
+    politeness: { delayMs: 0 },
+    egress: policyEgress,
+    ...overrides,
+  });
+
+  it("seeds the frontier from a conventional urlset without following page links", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy(),
+      guardedFixture(
+        openRobots,
+        {
+          urlSuffix: "/sitemap.xml",
+          body: `<urlset><url><loc>${origin}/camps</loc></url><url><loc>${origin}/detail?x=1&amp;y=2</loc></url></urlset>`,
+          headers: { "content-type": "application/xml" },
+        },
+        html(`${origin}/`, '<a href="/links-must-not-run">no</a>'),
+        html("/camps"),
+        html("/detail?x=1&y=2"),
+      ),
+    );
+    assert.deepEqual(
+      manifest.pages.map((page) => [page.url, page.depth]),
+      [[`${origin}/`, 0], [`${origin}/camps`, 1], [`${origin}/detail?x=1&y=2`, 1]],
+    );
+    assert.deepEqual(manifest.sitemap, { documentsRead: 1, urlsDiscovered: 2 });
+  });
+
+  it("uses robots Sitemap directives before the conventional location", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy(),
+      guardedFixture(
+        {
+          urlSuffix: "/robots.txt",
+          body: `User-agent: *\nDisallow:\nSitemap: ${origin}/custom-map.xml\n`,
+        },
+        {
+          urlSuffix: "/custom-map.xml",
+          body: `<urlset><url><loc>${origin}/from-robots</loc></url></urlset>`,
+          headers: { "content-type": "application/xml" },
+        },
+        html(`${origin}/`),
+        html("/from-robots"),
+      ),
+    );
+    assert.deepEqual(manifest.pages.map((page) => page.url), [
+      `${origin}/`,
+      `${origin}/from-robots`,
+    ]);
+  });
+
+  it("recursively reads a sitemap index", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy(),
+      guardedFixture(
+        openRobots,
+        {
+          urlSuffix: "/sitemap.xml",
+          body: `<sitemapindex><sitemap><loc>${origin}/nested.xml</loc></sitemap></sitemapindex>`,
+          headers: { "content-type": "application/xml" },
+        },
+        {
+          urlSuffix: "/nested.xml",
+          body: `<urlset><url><loc><![CDATA[${origin}/nested-page]]></loc></url></urlset>`,
+          headers: { "content-type": "application/xml" },
+        },
+        html(`${origin}/`),
+        html("/nested-page"),
+      ),
+    );
+    assert.equal(manifest.pages[1]?.url, `${origin}/nested-page`);
+    assert.deepEqual(manifest.sitemap, { documentsRead: 2, urlsDiscovered: 1 });
+  });
+
+  it("gunzips .xml.gz sitemap documents", async () => {
+    const bytes = gzipSync(
+      `<urlset><url><loc>${origin}/compressed</loc></url></urlset>`,
+    );
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy(),
+      guardedFixture(
+        {
+          urlSuffix: "/robots.txt",
+          body: `Sitemap: ${origin}/sitemap.xml.gz`,
+        },
+        {
+          urlSuffix: "/sitemap.xml.gz",
+          bodyBytes: [...bytes],
+          headers: { "content-type": "application/gzip" },
+        },
+        html(`${origin}/`),
+        html("/compressed"),
+      ),
+    );
+    assert.equal(manifest.pages[1]?.url, `${origin}/compressed`);
+  });
+
+  it("fails closed through the guard for an internal robots sitemap target", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy(),
+      guardedFixture(
+        {
+          urlSuffix: "/robots.txt",
+          body: "Sitemap: http://169.254.169.254/latest/meta-data\n",
+        },
+        html(`${origin}/`),
+      ),
+    );
+    assert.equal(manifest.sitemap?.documentsRead, 0);
+    assert.ok(manifest.warnings.some((warning) => warning.includes("DENIED_ADDRESS")));
+  });
+
+  it("drops cross-host page locations", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy(),
+      guardedFixture(
+        openRobots,
+        {
+          urlSuffix: "/sitemap.xml",
+          body: `<urlset><url><loc>${origin}/local</loc></url><url><loc>https://other.example/foreign</loc></url></urlset>`,
+          headers: { "content-type": "application/xml" },
+        },
+        html(`${origin}/`),
+        html("/local"),
+      ),
+    );
+    assert.deepEqual(manifest.pages.map((page) => page.url), [`${origin}/`, `${origin}/local`]);
+    assert.ok(manifest.warnings.some((warning) => warning.includes("off-host sitemap page")));
+  });
+
+  it("merges and deduplicates sitemap and link discovery in both mode", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy({ discovery: "both", maxPages: 4 }),
+      guardedFixture(
+        openRobots,
+        {
+          urlSuffix: "/sitemap.xml",
+          body: `<urlset><url><loc>${origin}/shared</loc></url><url><loc>${origin}/map-only</loc></url></urlset>`,
+          headers: { "content-type": "application/xml" },
+        },
+        html(`${origin}/`, '<a href="/shared">shared</a><a href="/link-only">link</a>'),
+        html("/shared"),
+        html("/map-only"),
+        html("/link-only"),
+      ),
+    );
+    assert.deepEqual(manifest.pages.map((page) => page.url), [
+      `${origin}/`,
+      `${origin}/shared`,
+      `${origin}/map-only`,
+      `${origin}/link-only`,
+    ]);
+  });
+
+  it("does not request robots or a sitemap in links mode", async () => {
+    const calls: string[] = [];
+    const guarded = guardedFixture(
+      html(`${origin}/`, '<a href="/linked">link</a>'),
+      html("/linked"),
+    ).fetch;
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      {
+        maxPages: 2,
+        maxDepth: 1,
+        discovery: "links",
+        robots: false,
+        politeness: { delayMs: 0 },
+        egress: policyEgress,
+      },
+      { fetch: async (url, init) => { calls.push(url); return guarded(url, init); } },
+    );
+    assert.deepEqual(manifest.pages.map((page) => page.url), [`${origin}/`, `${origin}/linked`]);
+    assert.equal(calls.some((url) => url.endsWith("/sitemap.xml")), false);
+    assert.equal(manifest.sitemap, undefined);
+  });
+
+  it("truncates discovered URLs at a bounded cap and warns", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy({ maxPages: 2 }),
+      guardedFixture(
+        openRobots,
+        {
+          urlSuffix: "/sitemap.xml",
+          body: `<urlset><url><loc>${origin}/one</loc></url><url><loc>${origin}/two</loc></url><url><loc>${origin}/three</loc></url></urlset>`,
+          headers: { "content-type": "application/xml" },
+        },
+        html(`${origin}/`),
+        html("/one"),
+      ),
+    );
+    assert.ok(manifest.warnings.some((warning) => warning.includes("sitemap URL cap (2)")));
+    assert.equal(manifest.truncated, true);
+  });
+
+  it("bounds sitemap index fan-out at the document cap", async () => {
+    const locations = Array.from(
+      { length: 60 },
+      (_, index) => `<sitemap><loc>${origin}/maps/${index}.xml</loc></sitemap>`,
+    ).join("");
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy({ maxPages: 2 }),
+      guardedFixture(
+        openRobots,
+        {
+          urlSuffix: "/sitemap.xml",
+          body: `<sitemapindex>${locations}</sitemapindex>`,
+          headers: { "content-type": "application/xml" },
+        },
+        {
+          urlSuffix: ".xml",
+          body: "<urlset></urlset>",
+          headers: { "content-type": "application/xml" },
+          repeat: true,
+        },
+        html(`${origin}/`),
+      ),
+    );
+    assert.equal(manifest.sitemap?.documentsRead, 50);
+    assert.ok(manifest.warnings.some((warning) => warning.includes("sitemap document cap (50)")));
+  });
+
+  it("stops nested indexes at the depth cap", async () => {
+    const index = (next: string) => ({
+      urlSuffix: `/maps/${next === "4" ? "3" : String(Number(next) - 1)}.xml`,
+      body: `<sitemapindex><sitemap><loc>${origin}/maps/${next}.xml</loc></sitemap></sitemapindex>`,
+      headers: { "content-type": "application/xml" },
+    });
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy({ maxPages: 2 }),
+      guardedFixture(
+        {
+          urlSuffix: "/robots.txt",
+          body: `Sitemap: ${origin}/maps/0.xml`,
+        },
+        index("1"),
+        index("2"),
+        index("3"),
+        index("4"),
+        html(`${origin}/`),
+      ),
+    );
+    assert.equal(manifest.sitemap?.documentsRead, 4);
+    assert.ok(manifest.warnings.some((warning) => warning.includes("sitemap nesting depth cap (3)")));
+  });
+
+  it("retains parseable locations and warns for malformed XML", async () => {
+    const manifest = await crawlWithOptions(
+      { url: origin },
+      sitemapPolicy(),
+      guardedFixture(
+        openRobots,
+        {
+          urlSuffix: "/sitemap.xml",
+          body: `<urlset><url><loc>${origin}/kept</loc></url><url><loc>${origin}/broken</url></urlset>`,
+          headers: { "content-type": "application/xml" },
+        },
+        html(`${origin}/`),
+        html("/kept"),
+      ),
+    );
+    assert.equal(manifest.pages[1]?.url, `${origin}/kept`);
+    assert.ok(manifest.warnings.some((warning) => warning.includes("malformed or unrecognized XML")));
   });
 });
 
