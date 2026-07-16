@@ -16,6 +16,10 @@
     "./egress": {
       "types": "./dist/src/egress-index.d.ts",
       "default": "./dist/src/egress-index.js"
+    },
+    "./fetch": {
+      "types": "./dist/src/fetch-index.d.ts",
+      "default": "./dist/src/fetch-index.js"
     }
   },
   "files": [

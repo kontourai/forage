@@ -452,7 +452,14 @@ export async function fetchSource(
           timeoutMs,
           warnings,
         );
-        return withWarnings({ snapshot: acquired }, warnings);
+        // Flag the RETURNED snapshot transiently — never mutate `prior` (the
+        // object read from the store) and never persist this flag ourselves;
+        // fetchSource only reads a SnapshotStore, it never writes one. See
+        // Snapshot.notModified.
+        return withWarnings(
+          { snapshot: { ...acquired, notModified: true } },
+          warnings,
+        );
       }
 
       if (response.status >= 300 && response.status < 400) {
