@@ -20,6 +20,20 @@ export interface Snapshot {
   /** Ordered URLs visited before `url`, when a same-host redirect occurred. */
   redirects?: string[];
   rendered?: boolean;
+  /**
+   * True ONLY on the snapshot RETURNED when a conditional GET (validators
+   * drawn from a matching prior snapshot in a `SnapshotStore`) produced a
+   * `304 Not Modified` — i.e. this is the byte-identical PRIOR snapshot,
+   * re-served without a body transfer because the resource is unchanged. A
+   * normal live fetch (200, or a validator-free re-fetch) never sets this.
+   * PRESENCE (never explicit `false`) is the marker — same convention as
+   * `rendered`. TRANSIENT: `fetchSource` only READS a `SnapshotStore` (via
+   * `latest()`), it never writes one, so this flag is never persisted by
+   * `fetchSource` itself and can never corrupt a later revalidation
+   * comparison (which reads `headers` etag/last-modified, not this field).
+   * Matches traverse's `Snapshot.notModified` contract (traverse/src/fetch/types.ts).
+   */
+  notModified?: boolean;
 }
 
 /** Persist/replay snapshots. A filesystem and an object-store impl both satisfy this. */

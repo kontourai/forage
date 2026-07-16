@@ -9,3 +9,31 @@ export function buildSnapshotSourceRef(snapshot: Snapshot): string {
   });
   return `forage-snapshot:${encodeURIComponent(snapshot.sourceId)}?${params.toString()}`;
 }
+
+export interface ParsedSnapshotSourceRef {
+  sourceId: string;
+  url: string;
+  bodyHash: string;
+  fetchedAt: string;
+}
+
+/**
+ * Parse a `buildSnapshotSourceRef` string back into its components, or
+ * `undefined` if `ref` is not a forage-snapshot ref. Round-trips
+ * `buildSnapshotSourceRef` exactly. Matches traverse's
+ * `parseSnapshotSourceRef` (traverse/src/fetch/compose.ts).
+ */
+export function parseSnapshotSourceRef(ref: string): ParsedSnapshotSourceRef | undefined {
+  const prefix = "forage-snapshot:";
+  if (!ref.startsWith(prefix)) return undefined;
+  const rest = ref.slice(prefix.length);
+  const q = rest.indexOf("?");
+  if (q === -1) return undefined;
+  const sourceId = decodeURIComponent(rest.slice(0, q));
+  const params = new URLSearchParams(rest.slice(q + 1));
+  const url = params.get("url");
+  const bodyHash = params.get("sha256");
+  const fetchedAt = params.get("fetchedAt");
+  if (!url || !bodyHash || !fetchedAt) return undefined;
+  return { sourceId, url, bodyHash, fetchedAt };
+}
