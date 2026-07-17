@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/kontourai/forage/compare/v0.2.0...v0.3.0) (2026-07-17)
+
+
+### Features
+
+* expose fetchSource via ./fetch subpath and add transient notModified 304 marker ([#13](https://github.com/kontourai/forage/issues/13)) ([d900e1c](https://github.com/kontourai/forage/commit/d900e1cf6b71b7e7f4b6d8df4f816b02346bb2b6))
+
 ## [0.2.0](https://github.com/kontourai/forage/compare/v0.1.0...v0.2.0) (2026-07-14)
 
 
