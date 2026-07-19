@@ -1,3 +1,4 @@
 _migration-refs/
+.kontourai/
 dist/
 node_modules/

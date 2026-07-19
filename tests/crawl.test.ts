@@ -635,7 +635,7 @@ describe("filesystem snapshot store", () => {
         fetchedAt: "2026-07-13T12:00:00.000Z",
         body: new Uint8Array([0, 255, 1, 254, 2]),
         bodyHash:
-          "6cef78c4b13133d552e4c5db2a45b20bb08413d3fb2b4230b14152b636240247",
+          "243876a7a7952190ccf8f470122e8acbd8584c682be5f70f70875af8bb7901fc",
       };
       await store.put(snapshot);
       const replay = await store.get(snapshot.sourceId, snapshot.bodyHash);

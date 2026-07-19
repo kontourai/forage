@@ -42,6 +42,26 @@ export interface SnapshotStore {
   latest(sourceId: string): Promise<Snapshot | undefined>;
   get(sourceId: string, bodyHash: string): Promise<Snapshot | undefined>;
   list(sourceId: string): Promise<Snapshot[]>;
+  /** Optional exact-lookup capability added after the released v0.3 store contract. */
+  findExact?(reference: SnapshotLookup): Promise<ExactSnapshotLookupResult>;
+}
+
+export interface SnapshotLookup {
+  sourceId: string;
+  url: string;
+  bodyHash: string;
+  fetchedAt: string;
+  snapshotDigest?: string;
+}
+
+export type ExactSnapshotLookupResult =
+  | { kind: "found"; snapshot: Snapshot }
+  | { kind: "missing" }
+  | { kind: "mismatch" };
+
+export interface ExactSnapshotStore extends SnapshotStore {
+  /** Full identity lookup: no hash prefixes and no unbounded history scan. */
+  findExact(reference: SnapshotLookup): Promise<ExactSnapshotLookupResult>;
 }
 
 /** SSRF egress policy. Default construction is guarded (pin-on); opting out is explicit. */
