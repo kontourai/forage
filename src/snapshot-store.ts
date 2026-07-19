@@ -164,7 +164,28 @@ async function ensureRealDirectory(directory: string): Promise<void> {
   }
 }
 
-async function createImmutableFile(file: string, contents: string): Promise<boolean> {
+export interface ImmutableFilePublicationFaults {
+  afterTempSync?: (file: string) => void;
+  afterLink?: (file: string) => void;
+  beforeDirectorySync?: (file: string) => void;
+}
+
+async function syncParentDirectory(file: string, faults?: ImmutableFilePublicationFaults): Promise<void> {
+  faults?.beforeDirectorySync?.(file);
+  const directory = await open(path.dirname(file), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+/** Internal crash-boundary primitive; not exported from the package root. */
+export async function publishImmutableFile(
+  file: string,
+  contents: string,
+  faults?: ImmutableFilePublicationFaults,
+): Promise<boolean> {
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   let handle;
   try {
@@ -173,6 +194,7 @@ async function createImmutableFile(file: string, contents: string): Promise<bool
     await handle.sync();
     await handle.close();
     handle = undefined;
+    faults?.afterTempSync?.(file);
   } catch (error) {
     try {
       await handle?.close();
@@ -187,32 +209,28 @@ async function createImmutableFile(file: string, contents: string): Promise<bool
     throw error;
   }
 
-  let installed = false;
   try {
     await link(temporary, file);
-    installed = true;
-    const directory = await open(path.dirname(file), "r");
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
+    faults?.afterLink?.(file);
+    await syncParentDirectory(file, faults);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      await syncParentDirectory(file, faults);
+      return false;
+    }
     throw error;
   } finally {
     try {
       await unlink(temporary);
-    } catch (error) {
-      if (!installed && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    } catch {
       // A committed final file remains authoritative; an orphan temp is harmless.
     }
   }
 }
 
 async function writeIdentityIndex(file: string, filename: string): Promise<void> {
-  if (await createImmutableFile(file, filename)) return;
+  if (await publishImmutableFile(file, filename)) return;
   const existing = await readBoundedRegularFile(file, 512);
   if (existing === undefined || !/^[0-9A-Za-z._-]+-[a-f0-9]{64}\.json$/.test(existing.trim())) {
     throw new Error("snapshot identity index is invalid");
@@ -233,7 +251,7 @@ async function reserveCapacitySlot(
   for (let offset = 0; offset < maxHistoryFiles; offset += 1) {
     const slot = (start + offset) % maxHistoryFiles;
     const file = path.join(indexDirectory, `${slot}.txt`);
-    if (await createImmutableFile(file, filename)) return;
+    if (await publishImmutableFile(file, filename)) return;
     const existing = await readBoundedRegularFile(file, 512);
     if (existing === filename) return;
   }
@@ -248,7 +266,7 @@ async function ensureCapacityIndex(
   await ensureRealDirectory(indexDirectory);
   const configuredMax = String(maxHistoryFiles);
   const maxFile = path.join(indexDirectory, "max-history-files.txt");
-  if (!await createImmutableFile(maxFile, configuredMax)) {
+  if (!await publishImmutableFile(maxFile, configuredMax)) {
     const existing = await readBoundedRegularFile(maxFile, 32);
     if (existing !== configuredMax) {
       throw new Error("maxHistoryFiles cannot change after filesystem store initialization");
@@ -266,7 +284,7 @@ async function ensureCapacityIndex(
     for (const filename of records) {
       await reserveCapacitySlot(indexDirectory, filename, maxHistoryFiles);
     }
-    await createImmutableFile(initialized, "1");
+    await publishImmutableFile(initialized, "1");
   }
   return indexDirectory;
 }
@@ -393,7 +411,7 @@ async function persistFilesystemSnapshot(
   }
   const capacityIndex = await ensureCapacityIndex(directory, maxHistoryFiles);
   await reserveCapacitySlot(capacityIndex, filename, maxHistoryFiles);
-  if (!await createImmutableFile(record, serialized)) {
+  if (!await publishImmutableFile(record, serialized)) {
     const existing = await readSnapshotFile(record);
     if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
       throw new Error("immutable snapshot record conflicts with the supplied capture");
