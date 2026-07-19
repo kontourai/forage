@@ -728,6 +728,7 @@ describe("@kontourai/forage/fetch public surface", () => {
     try {
       const { filesystem, record } = await recordPath(root, snapshot);
       await rm(record);
+      await writeFile(`${record}.interrupted.tmp`, "partial", "utf8");
       await filesystem.put(snapshot);
       assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
 

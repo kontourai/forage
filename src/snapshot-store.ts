@@ -1,6 +1,6 @@
 /** Filesystem and in-memory stores lifted from traverse/fetch/snapshot-store.ts. */
-import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readdir, unlink } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, lstat, mkdir, open, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
@@ -165,30 +165,50 @@ async function ensureRealDirectory(directory: string): Promise<void> {
 }
 
 async function createImmutableFile(file: string, contents: string): Promise<boolean> {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   let handle;
   try {
-    handle = await open(file, "wx", 0o600);
+    handle = await open(temporary, "wx", 0o600);
+    await handle.writeFile(contents, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+  } catch (error) {
+    try {
+      await handle?.close();
+    } catch {
+      // Cleanup below remains best-effort; the original failure is authoritative.
+    }
+    try {
+      await unlink(temporary);
+    } catch {
+      // An abandoned sibling temp is ignored by every store reader.
+    }
+    throw error;
+  }
+
+  let installed = false;
+  try {
+    await link(temporary, file);
+    installed = true;
+    const directory = await open(path.dirname(file), "r");
+    try {
+      await directory.sync();
+    } finally {
+      await directory.close();
+    }
+    return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
     throw error;
-  }
-  try {
-    await handle.writeFile(contents, "utf8");
-    await handle.close();
-  } catch (error) {
+  } finally {
     try {
-      await handle.close();
-    } catch {
-      // Cleanup below remains best-effort; the original write failure is authoritative.
+      await unlink(temporary);
+    } catch (error) {
+      if (!installed && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      // A committed final file remains authoritative; an orphan temp is harmless.
     }
-    try {
-      await unlink(file);
-    } catch {
-      // A failed exclusive create remains detectable as a corrupt immutable entry.
-    }
-    throw error;
   }
-  return true;
 }
 
 async function writeIdentityIndex(file: string, filename: string): Promise<void> {
