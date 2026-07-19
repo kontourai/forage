@@ -721,4 +721,23 @@ describe("@kontourai/forage/fetch public surface", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("retries an interrupted reserved snapshot idempotently and fixes the history ceiling", async () => {
+    const snapshot = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-reservation-retry-"));
+    try {
+      const { filesystem, record } = await recordPath(root, snapshot);
+      await rm(record);
+      await filesystem.put(snapshot);
+      assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
+
+      const differentlyConfigured = createFilesystemSnapshotStore({ root, maxHistoryFiles: 2 });
+      await assert.rejects(
+        differentlyConfigured.put({ ...snapshot, fetchedAt: "2026-07-18T12:02:00.000Z" }),
+        /maxHistoryFiles cannot change/,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

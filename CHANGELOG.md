@@ -10,7 +10,7 @@
 
 ### Fixes
 
-* bound and canonicalize filesystem history, enforce source isolation, and serialize writes at the configured retention ceiling before the initial 0.4.0 publication
+* bound and canonicalize filesystem history, enforce source isolation, and atomically reserve writes at the configured retention ceiling before the initial 0.4.0 publication
 
 ## [0.3.0](https://github.com/kontourai/forage/compare/v0.2.0...v0.3.0) (2026-07-17)
 

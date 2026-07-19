@@ -2,7 +2,6 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
-import lockfile from "proper-lockfile";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
 import type {
@@ -200,6 +199,58 @@ async function writeIdentityIndex(file: string, filename: string): Promise<void>
   }
 }
 
+function capacitySlotStart(filename: string, maxHistoryFiles: number): number {
+  const prefix = createHash("sha256").update(filename, "utf8").digest("hex").slice(0, 12);
+  return Number.parseInt(prefix, 16) % maxHistoryFiles;
+}
+
+async function reserveCapacitySlot(
+  indexDirectory: string,
+  filename: string,
+  maxHistoryFiles: number,
+): Promise<void> {
+  const start = capacitySlotStart(filename, maxHistoryFiles);
+  for (let offset = 0; offset < maxHistoryFiles; offset += 1) {
+    const slot = (start + offset) % maxHistoryFiles;
+    const file = path.join(indexDirectory, `${slot}.txt`);
+    if (await createImmutableFile(file, filename)) return;
+    const existing = await readBoundedRegularFile(file, 512);
+    if (existing === filename) return;
+  }
+  throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+}
+
+async function ensureCapacityIndex(
+  directory: string,
+  maxHistoryFiles: number,
+): Promise<string> {
+  const indexDirectory = path.join(directory, "capacity-index");
+  await ensureRealDirectory(indexDirectory);
+  const configuredMax = String(maxHistoryFiles);
+  const maxFile = path.join(indexDirectory, "max-history-files.txt");
+  if (!await createImmutableFile(maxFile, configuredMax)) {
+    const existing = await readBoundedRegularFile(maxFile, 32);
+    if (existing !== configuredMax) {
+      throw new Error("maxHistoryFiles cannot change after filesystem store initialization");
+    }
+  }
+
+  const initialized = path.join(indexDirectory, "initialized.txt");
+  if (await readBoundedRegularFile(initialized, 16) !== "1") {
+    const records = (await readdir(directory))
+      .filter((name) => name.endsWith(".json"))
+      .sort();
+    if (records.length > maxHistoryFiles) {
+      throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+    }
+    for (const filename of records) {
+      await reserveCapacitySlot(indexDirectory, filename, maxHistoryFiles);
+    }
+    await createImmutableFile(initialized, "1");
+  }
+  return indexDirectory;
+}
+
 async function readSnapshotFile(file: string): Promise<Snapshot | undefined> {
   const text = await readBoundedRegularFile(file, MAX_SNAPSHOT_FILE_BYTES);
   if (text === undefined) return undefined;
@@ -314,45 +365,26 @@ async function persistFilesystemSnapshot(
 ): Promise<void> {
   const directory = path.join(root, sourceDirName(snapshot.sourceId));
   await ensureRealDirectory(directory);
-  let compromised: Error | undefined;
-  const release = await lockfile.lock(directory, {
-    stale: 30_000,
-    update: 5_000,
-    retries: { retries: 100, factor: 1.2, minTimeout: 10, maxTimeout: 100, randomize: true },
-    onCompromised: (error) => { compromised = error; },
-  });
-  try {
-    const filename = snapshotFileName(snapshot);
-    const record = path.join(directory, filename);
-    const serialized = JSON.stringify(toDiskShape(snapshot), null, 2);
-    if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_FILE_BYTES) {
-      throw new TypeError("serialized snapshot exceeds the filesystem store limit");
-    }
-    const created = await createImmutableFile(record, serialized);
-    if (!created) {
-      const existing = await readSnapshotFile(record);
-      if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
-        throw new Error("immutable snapshot record conflicts with the supplied capture");
-      }
-    } else {
-      const records = (await readdir(directory)).filter((name) => name.endsWith(".json"));
-      if (records.length > maxHistoryFiles) {
-        await unlink(record);
-        throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
-      }
-    }
-    const indexDirectory = path.join(directory, "identity-index");
-    await ensureRealDirectory(indexDirectory);
-    await writeIdentityIndex(
-      path.join(indexDirectory, `${snapshotIdentityDigest(snapshot)}.txt`),
-      filename,
-    );
-    if (compromised !== undefined) {
-      throw new Error("snapshot history write lock was compromised", { cause: compromised });
-    }
-  } finally {
-    await release();
+  const filename = snapshotFileName(snapshot);
+  const record = path.join(directory, filename);
+  const serialized = JSON.stringify(toDiskShape(snapshot), null, 2);
+  if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_FILE_BYTES) {
+    throw new TypeError("serialized snapshot exceeds the filesystem store limit");
   }
+  const capacityIndex = await ensureCapacityIndex(directory, maxHistoryFiles);
+  await reserveCapacitySlot(capacityIndex, filename, maxHistoryFiles);
+  if (!await createImmutableFile(record, serialized)) {
+    const existing = await readSnapshotFile(record);
+    if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
+      throw new Error("immutable snapshot record conflicts with the supplied capture");
+    }
+  }
+  const identityIndex = path.join(directory, "identity-index");
+  await ensureRealDirectory(identityIndex);
+  await writeIdentityIndex(
+    path.join(identityIndex, `${snapshotIdentityDigest(snapshot)}.txt`),
+    filename,
+  );
 }
 
 async function findExactFilesystemSnapshot(
