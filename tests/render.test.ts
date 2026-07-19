@@ -262,6 +262,27 @@ describe("pinned browser security (mock browser routes; no live browser)", () =>
     assert.deepEqual({ launches, closes }, { launches: 2, closes: 2 });
   });
 
+  it("rejects rendered HTML that exceeds the caller's byte ceiling", async () => {
+    let closes = 0;
+    const render = createForageRenderImpl({
+      resolver: async () => [{ address: "93.184.216.34" }],
+      testOnlyBrowserLauncher: async () => ({
+        newPage: async () => ({
+          route: async () => undefined,
+          goto: async () => undefined,
+          content: async () => "rendered",
+          close: async () => { closes++; },
+        }),
+        close: async () => { closes++; },
+      }),
+    });
+    await assert.rejects(
+      render("https://render.example/", { maxResponseBytes: 5 }),
+      /rendered response exceeds 5 bytes/,
+    );
+    assert.equal(closes, 2);
+  });
+
   it("refuses resolver-rule injection hostnames", async () => {
     await assert.rejects(
       preparePinnedBrowserNavigation(

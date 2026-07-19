@@ -8,6 +8,7 @@ export type FetchErrorKind =
   | "network"
   | "egress-denied"
   | "http-error"
+  | "response-too-large"
   | "too-many-redirects"
   | "no-snapshot";
 
@@ -44,7 +45,7 @@ export interface RenderResult {
 
 export type RenderImpl = (
   url: string,
-  options?: { timeoutMs?: number },
+  options?: { timeoutMs?: number; maxResponseBytes?: number },
 ) => Promise<RenderResult>;
 
 export type FetchLike = (
@@ -72,6 +73,8 @@ export interface FetchSourceOptions {
   politenessState?: Map<string, number>;
   robotsCache?: Map<string, RobotsRules>;
   store?: SnapshotStore;
+  /** Maximum body bytes to retain in any returned source snapshot. */
+  maxResponseBytes?: number;
   /** Browser transport injection seam. Omit to load forage's optional renderer lazily. */
   renderImpl?: RenderImpl;
 }

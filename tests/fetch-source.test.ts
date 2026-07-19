@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { fetchSource } from "../src/fetch-source.js";
+import { fetchSource, sha256Hex } from "../src/fetch-source.js";
 import { createInMemorySnapshotStore } from "../src/snapshot-store.js";
 import type {
   FetchLike,
@@ -189,5 +189,105 @@ describe("fetchSource() — Snapshot.notModified transient marker (forage#4)", (
     assert.equal(result.snapshot?.notModified, undefined);
     assert.equal(result.snapshot?.headers?.etag, '"v2"');
     assert.equal(result.snapshot?.body, "changed");
+  });
+});
+
+describe("fetchSource() — bounded response streaming", () => {
+  it("accepts a response exactly at the caller's byte limit", async () => {
+    const fetch = fakeFetch({
+      "https://example.test/page": { headers: { "content-length": "5" }, body: "hello" },
+    });
+    const result = await fetchSource(cfg(), fastOpts({ fetch, maxResponseBytes: 5 }));
+    assert.equal(result.error, undefined);
+    assert.equal(result.snapshot?.body, "hello");
+  });
+
+  it("rejects an oversized declared body before reading it", async () => {
+    let cancelled = false;
+    const fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode("hello!")); },
+      cancel() { cancelled = true; },
+    }), { headers: { "content-length": "6" } })) as FetchLike;
+    const result = await fetchSource(cfg(), fastOpts({ fetch, maxResponseBytes: 5 }));
+    assert.equal(result.snapshot, undefined);
+    assert.equal(result.error?.kind, "response-too-large");
+    assert.equal(cancelled, true);
+  });
+
+  it("cancels a chunked response as soon as actual bytes exceed the limit", async () => {
+    let cancelled = false;
+    const fetch = (async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("1234"));
+        controller.enqueue(new TextEncoder().encode("5678"));
+      },
+      cancel() { cancelled = true; },
+    }))) as FetchLike;
+    const result = await fetchSource(cfg(), fastOpts({ fetch, maxResponseBytes: 5 }));
+    assert.equal(result.error?.kind, "response-too-large");
+    assert.equal(cancelled, true);
+  });
+
+  it("rejects an invalid byte limit before network access", async () => {
+    const fetch = fakeFetch({ "https://example.test/page": { body: "hello" } });
+    const result = await fetchSource(cfg(), fastOpts({ fetch, maxResponseBytes: 0 }));
+    assert.equal(result.error?.kind, "invalid-config");
+    assert.equal(fetch.calls.length, 0);
+  });
+
+  it("bounds robots bodies and proceeds fail-open to the target", async () => {
+    const fetch = fakeFetch({
+      "https://example.test/robots.txt": {
+        headers: { "content-length": String(256 * 1024 + 1) },
+        body: "x",
+      },
+      "https://example.test/page": { body: "hello" },
+    });
+    const result = await fetchSource(cfg({ respectRobots: true }), fastOpts({ fetch, maxResponseBytes: 5 }));
+    assert.equal(result.error, undefined);
+    assert.equal(result.snapshot?.body, "hello");
+    assert.match(result.warnings?.[0] ?? "", /robots\.txt.*exceeded/);
+  });
+
+  it("passes the ceiling into rendering and never returns oversized rendered HTML", async () => {
+    let receivedLimit: number | undefined;
+    const result = await fetchSource(
+      cfg({ render: true }),
+      fastOpts({
+        fetch: fakeFetch({ "https://example.test/page": { body: "plain" } }),
+        maxResponseBytes: 5,
+        renderImpl: async (_url, options) => {
+          receivedLimit = options?.maxResponseBytes;
+          return { html: "rendered" };
+        },
+      }),
+    );
+    assert.equal(receivedLimit, 5);
+    assert.equal(result.snapshot, undefined);
+    assert.equal(result.error?.kind, "response-too-large");
+  });
+
+  it("rejects an oversized prior snapshot on a validated 304 response", async () => {
+    const store = createInMemorySnapshotStore();
+    const prior = {
+      sourceId: "src-1",
+      url: "https://example.test/page",
+      status: 200,
+      fetchedAt: "2026-07-18T00:00:00.000Z",
+      body: "oversized",
+      headers: { etag: '"v1"' },
+      bodyHash: sha256Hex("oversized"),
+    };
+    await store.put(prior);
+    const result = await fetchSource(
+      cfg(),
+      fastOpts({
+        fetch: (async () => new Response(null, { status: 304 })) as FetchLike,
+        maxResponseBytes: 5,
+        store,
+      }),
+    );
+    assert.equal(result.snapshot, undefined);
+    assert.equal(result.error?.kind, "response-too-large");
   });
 });
