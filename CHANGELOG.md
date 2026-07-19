@@ -7,6 +7,11 @@
 
 * resolve exact snapshots from durable references ([#16](https://github.com/kontourai/forage/issues/16)) ([3b9fb3b](https://github.com/kontourai/forage/commit/3b9fb3b26ee3ac7028b2a9a9b9525a73cdeb2823)), closes [#15](https://github.com/kontourai/forage/issues/15)
 
+
+### Fixes
+
+* make immutable filesystem records crash-atomic, bound and canonicalize history, enforce source isolation, and reserve writes at the configured retention ceiling before the initial 0.4.0 publication
+
 ## [0.3.0](https://github.com/kontourai/forage/compare/v0.2.0...v0.3.0) (2026-07-17)
 
 

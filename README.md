@@ -84,6 +84,17 @@ stronger current index, but is not required to resolve an existing reference.
 The current grammar is a backward-compatible extension that adds
 `snapshotSha256`; durable replay bodies are capped at 64 MiB.
 
+Filesystem stores cap each snapshot record at 96 MiB and each source history
+at 10,000 JSON records. `put()` reserves capacity before creating a record and
+rejects a new identity when no slot remains, so a successful write cannot make
+later history reads fail. Applications with a lower retention ceiling can pass
+`maxHistoryFiles` to `createFilesystemSnapshotStore()`; the accepted range is
+1 through 10,000 and cannot change after a source store is initialized.
+Capacity decisions use deterministic, exclusive filesystem slot reservations,
+so cooperating store instances and processes cannot consume the same remaining
+slot. A process interrupted after reservation can complete the same immutable
+snapshot idempotently on retry. The store does not silently delete evidence.
+
 ## MVP policy support
 
 The current crawler implements `discovery: "links"`, `"sitemap"`, and `"both"`.

@@ -407,9 +407,18 @@ describe("@kontourai/forage/fetch public surface", () => {
       await filesystem.put(snapshot);
       const [sourceDirectory] = await readdir(root);
       const sourceRoot = path.join(root, sourceDirectory);
+      const releasedFilename = `${snapshot.fetchedAt.replace(/[^0-9A-Za-z._-]/g, "-")}-${snapshot.bodyHash.slice(0, 12)}.json`;
+      await writeFile(path.join(sourceRoot, releasedFilename), JSON.stringify({
+        ...snapshot,
+        notModified: true,
+        unknown: "must not survive",
+      }, null, 2));
+      await filesystem.put(snapshot);
+      assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
+      assert.deepEqual(await filesystem.latest(snapshot.sourceId), snapshot);
+
       await rm(sourceRoot, { recursive: true, force: true });
       await mkdir(sourceRoot, { recursive: true });
-      const releasedFilename = `${snapshot.fetchedAt.replace(/[^0-9A-Za-z._-]/g, "-")}-${snapshot.bodyHash.slice(0, 12)}.json`;
       await writeFile(path.join(sourceRoot, releasedFilename), JSON.stringify(snapshot, null, 2));
       const filesystemResult = await resolveSnapshotSourceRef(filesystem, ref);
       assert.equal(filesystemResult.ok, true);
@@ -637,6 +646,99 @@ describe("@kontourai/forage/fetch public surface", () => {
       await assertStoreError(filesystem, snapshot);
     } finally {
       await rm(malformedRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds history reads and isolates foreign filesystem entries", async () => {
+    const snapshot = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-bounds-"));
+    try {
+      const { filesystem, record } = await recordPath(root, snapshot);
+      const sourceRoot = path.dirname(record);
+      await mkdir(path.join(sourceRoot, "foreign.json"));
+      await writeFile(path.join(sourceRoot, "malformed.json"), "{", "utf8");
+      await writeFile(path.join(sourceRoot, "oversized.json"), "", "utf8");
+      await truncate(path.join(sourceRoot, "oversized.json"), 96 * 1024 * 1024 + 1);
+      await writeFile(path.join(sourceRoot, "wrong-source.json"), JSON.stringify({
+        ...snapshot,
+        sourceId: "different-source",
+      }), "utf8");
+
+      assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
+      assert.deepEqual(await filesystem.latest(snapshot.sourceId), snapshot);
+      assert.deepEqual(await filesystem.get(snapshot.sourceId, snapshot.bodyHash), snapshot);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a write beyond the configured history bound without corrupting prior records", async () => {
+    const first = replaySnapshot();
+    const secondBody = "model: later-result";
+    const second: Snapshot = {
+      ...first,
+      fetchedAt: "2026-07-18T12:01:00.000Z",
+      body: secondBody,
+      bodyHash: createHash("sha256").update(secondBody).digest("hex"),
+    };
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-write-bound-"));
+    try {
+      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 1 });
+      await store.put(first);
+      await assert.rejects(store.put(second), /snapshot history exceeds 1 records/);
+      assert.deepEqual(await store.list(first.sourceId), [first]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes concurrent capacity decisions across filesystem store instances", async () => {
+    const initial = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-concurrency-"));
+    const candidate = (minute: number): Snapshot => {
+      const body = `model: concurrent-${minute}`;
+      return {
+        ...initial,
+        fetchedAt: `2026-07-18T12:0${minute}:00.000Z`,
+        body,
+        bodyHash: createHash("sha256").update(body).digest("hex"),
+      };
+    };
+    try {
+      const firstStore = createFilesystemSnapshotStore({ root, maxHistoryFiles: 3 });
+      const secondStore = createFilesystemSnapshotStore({ root, maxHistoryFiles: 3 });
+      await firstStore.put(initial);
+      await firstStore.put(candidate(1));
+
+      const results = await Promise.allSettled([
+        firstStore.put(candidate(2)),
+        secondStore.put(candidate(3)),
+      ]);
+      assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+      assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+      assert.equal((await firstStore.list(initial.sourceId)).length, 3);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retries an interrupted reserved snapshot idempotently and fixes the history ceiling", async () => {
+    const snapshot = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-reservation-retry-"));
+    try {
+      const { filesystem, record } = await recordPath(root, snapshot);
+      await rm(record);
+      await writeFile(`${record}.interrupted.tmp`, "partial", "utf8");
+      await filesystem.put(snapshot);
+      assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
+
+      const differentlyConfigured = createFilesystemSnapshotStore({ root, maxHistoryFiles: 2 });
+      await assert.rejects(
+        differentlyConfigured.put({ ...snapshot, fetchedAt: "2026-07-18T12:02:00.000Z" }),
+        /maxHistoryFiles cannot change/,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

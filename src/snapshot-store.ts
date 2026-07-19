@@ -1,6 +1,6 @@
 /** Filesystem and in-memory stores lifted from traverse/fetch/snapshot-store.ts. */
-import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readdir, readFile, unlink } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, lstat, mkdir, open, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 
 const MAX_SNAPSHOT_FILE_BYTES = 96 * 1024 * 1024;
+const MAX_HISTORY_FILES = 10_000;
 const MAX_LOOKUP_FIELD_LENGTH = 1024 * 1024;
 const MAX_SOURCE_ID_LENGTH = 1024;
 const MAX_URL_LENGTH = 8 * 1024;
@@ -163,39 +164,129 @@ async function ensureRealDirectory(directory: string): Promise<void> {
   }
 }
 
-async function createImmutableFile(file: string, contents: string): Promise<boolean> {
+export interface ImmutableFilePublicationFaults {
+  afterTempSync?: (file: string) => void;
+  afterLink?: (file: string) => void;
+  beforeDirectorySync?: (file: string) => void;
+}
+
+async function syncParentDirectory(file: string, faults?: ImmutableFilePublicationFaults): Promise<void> {
+  faults?.beforeDirectorySync?.(file);
+  const directory = await open(path.dirname(file), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+/** Internal crash-boundary primitive; not exported from the package root. */
+export async function publishImmutableFile(
+  file: string,
+  contents: string,
+  faults?: ImmutableFilePublicationFaults,
+): Promise<boolean> {
+  const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   let handle;
   try {
-    handle = await open(file, "wx", 0o600);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
-    throw error;
-  }
-  try {
+    handle = await open(temporary, "wx", 0o600);
     await handle.writeFile(contents, "utf8");
+    await handle.sync();
     await handle.close();
+    handle = undefined;
+    faults?.afterTempSync?.(file);
   } catch (error) {
     try {
-      await handle.close();
+      await handle?.close();
     } catch {
-      // Cleanup below remains best-effort; the original write failure is authoritative.
+      // Cleanup below remains best-effort; the original failure is authoritative.
     }
     try {
-      await unlink(file);
+      await unlink(temporary);
     } catch {
-      // A failed exclusive create remains detectable as a corrupt immutable entry.
+      // An abandoned sibling temp is ignored by every store reader.
     }
     throw error;
   }
-  return true;
+
+  try {
+    await link(temporary, file);
+    faults?.afterLink?.(file);
+    await syncParentDirectory(file, faults);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      await syncParentDirectory(file, faults);
+      return false;
+    }
+    throw error;
+  } finally {
+    try {
+      await unlink(temporary);
+    } catch {
+      // A committed final file remains authoritative; an orphan temp is harmless.
+    }
+  }
 }
 
 async function writeIdentityIndex(file: string, filename: string): Promise<void> {
-  if (await createImmutableFile(file, filename)) return;
+  if (await publishImmutableFile(file, filename)) return;
   const existing = await readBoundedRegularFile(file, 512);
   if (existing === undefined || !/^[0-9A-Za-z._-]+-[a-f0-9]{64}\.json$/.test(existing.trim())) {
     throw new Error("snapshot identity index is invalid");
   }
+}
+
+function capacitySlotStart(filename: string, maxHistoryFiles: number): number {
+  const prefix = createHash("sha256").update(filename, "utf8").digest("hex").slice(0, 12);
+  return Number.parseInt(prefix, 16) % maxHistoryFiles;
+}
+
+async function reserveCapacitySlot(
+  indexDirectory: string,
+  filename: string,
+  maxHistoryFiles: number,
+): Promise<void> {
+  const start = capacitySlotStart(filename, maxHistoryFiles);
+  for (let offset = 0; offset < maxHistoryFiles; offset += 1) {
+    const slot = (start + offset) % maxHistoryFiles;
+    const file = path.join(indexDirectory, `${slot}.txt`);
+    if (await publishImmutableFile(file, filename)) return;
+    const existing = await readBoundedRegularFile(file, 512);
+    if (existing === filename) return;
+  }
+  throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+}
+
+async function ensureCapacityIndex(
+  directory: string,
+  maxHistoryFiles: number,
+): Promise<string> {
+  const indexDirectory = path.join(directory, "capacity-index");
+  await ensureRealDirectory(indexDirectory);
+  const configuredMax = String(maxHistoryFiles);
+  const maxFile = path.join(indexDirectory, "max-history-files.txt");
+  if (!await publishImmutableFile(maxFile, configuredMax)) {
+    const existing = await readBoundedRegularFile(maxFile, 32);
+    if (existing !== configuredMax) {
+      throw new Error("maxHistoryFiles cannot change after filesystem store initialization");
+    }
+  }
+
+  const initialized = path.join(indexDirectory, "initialized.txt");
+  if (await readBoundedRegularFile(initialized, 16) !== "1") {
+    const records = (await readdir(directory))
+      .filter((name) => name.endsWith(".json"))
+      .sort();
+    if (records.length > maxHistoryFiles) {
+      throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+    }
+    for (const filename of records) {
+      await reserveCapacitySlot(indexDirectory, filename, maxHistoryFiles);
+    }
+    await publishImmutableFile(initialized, "1");
+  }
+  return indexDirectory;
 }
 
 async function readSnapshotFile(file: string): Promise<Snapshot | undefined> {
@@ -248,16 +339,36 @@ function isSnapshot(value: unknown): value is Snapshot {
 function sortSnapshots(snapshots: Snapshot[]): Snapshot[] {
   return snapshots.sort((left, right) =>
     left.fetchedAt === right.fetchedAt
-      ? right.bodyHash.localeCompare(left.bodyHash)
-      : right.fetchedAt.localeCompare(left.fetchedAt),
+      ? left.bodyHash === right.bodyHash
+        ? compareDescending(snapshotEnvelopeDigest(left), snapshotEnvelopeDigest(right))
+        : compareDescending(left.bodyHash, right.bodyHash)
+      : compareDescending(left.fetchedAt, right.fetchedAt),
   );
+}
+
+function compareDescending(left: string, right: string): number {
+  return left < right ? 1 : left > right ? -1 : 0;
 }
 
 export interface FilesystemSnapshotStoreOptions {
   root: string;
+  /** Maximum JSON record files retained per source directory. Defaults to 10,000. */
+  maxHistoryFiles?: number;
 }
 
-async function readAllSnapshots(root: string, sourceId: string): Promise<Snapshot[]> {
+function resolveMaxHistoryFiles(value: number | undefined): number {
+  if (value === undefined) return MAX_HISTORY_FILES;
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_HISTORY_FILES) {
+    throw new TypeError(`maxHistoryFiles must be an integer from 1 to ${MAX_HISTORY_FILES}`);
+  }
+  return value;
+}
+
+async function readAllSnapshots(
+  root: string,
+  sourceId: string,
+  maxHistoryFiles: number,
+): Promise<Snapshot[]> {
   const directory = path.join(root, sourceDirName(sourceId));
   let names: string[];
   try {
@@ -266,21 +377,30 @@ async function readAllSnapshots(root: string, sourceId: string): Promise<Snapsho
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
-  const snapshots: Snapshot[] = [];
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
-    const text = await readFile(path.join(directory, name), "utf8");
+  const records = names.filter((name) => name.endsWith(".json"));
+  if (records.length > maxHistoryFiles) {
+    throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+  }
+  const snapshots = new Map<string, Snapshot>();
+  for (const name of records) {
     try {
-      const parsed = fromDiskShape(JSON.parse(text));
-      if (isSnapshot(parsed)) snapshots.push(parsed);
+      const parsed = await readSnapshotFile(path.join(directory, name));
+      if (parsed === undefined) continue;
+      const durable = canonicalDurableSnapshot(parsed);
+      if (durable.sourceId !== sourceId) continue;
+      snapshots.set(snapshotEnvelopeDigest(durable), durable);
     } catch {
       // Malformed or foreign content does not poison the store.
     }
   }
-  return sortSnapshots(snapshots);
+  return sortSnapshots([...snapshots.values()]);
 }
 
-async function persistFilesystemSnapshot(root: string, snapshot: Snapshot): Promise<void> {
+async function persistFilesystemSnapshot(
+  root: string,
+  snapshot: Snapshot,
+  maxHistoryFiles: number,
+): Promise<void> {
   const directory = path.join(root, sourceDirName(snapshot.sourceId));
   await ensureRealDirectory(directory);
   const filename = snapshotFileName(snapshot);
@@ -289,16 +409,18 @@ async function persistFilesystemSnapshot(root: string, snapshot: Snapshot): Prom
   if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_FILE_BYTES) {
     throw new TypeError("serialized snapshot exceeds the filesystem store limit");
   }
-  if (!await createImmutableFile(record, serialized)) {
+  const capacityIndex = await ensureCapacityIndex(directory, maxHistoryFiles);
+  await reserveCapacitySlot(capacityIndex, filename, maxHistoryFiles);
+  if (!await publishImmutableFile(record, serialized)) {
     const existing = await readSnapshotFile(record);
     if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
       throw new Error("immutable snapshot record conflicts with the supplied capture");
     }
   }
-  const indexDirectory = path.join(directory, "identity-index");
-  await ensureRealDirectory(indexDirectory);
+  const identityIndex = path.join(directory, "identity-index");
+  await ensureRealDirectory(identityIndex);
   await writeIdentityIndex(
-    path.join(indexDirectory, `${snapshotIdentityDigest(snapshot)}.txt`),
+    path.join(identityIndex, `${snapshotIdentityDigest(snapshot)}.txt`),
     filename,
   );
 }
@@ -344,20 +466,21 @@ export function createFilesystemSnapshotStore(
   options: FilesystemSnapshotStoreOptions,
 ): ExactSnapshotStore {
   const root = path.resolve(options.root);
+  const maxHistoryFiles = resolveMaxHistoryFiles(options.maxHistoryFiles);
 
   return {
-    put: (snapshot) => persistFilesystemSnapshot(root, snapshot),
+    put: (snapshot) => persistFilesystemSnapshot(root, snapshot, maxHistoryFiles),
     async latest(sourceId) {
-      return (await readAllSnapshots(root, sourceId))[0];
+      return (await readAllSnapshots(root, sourceId, maxHistoryFiles))[0];
     },
     async get(sourceId, bodyHash) {
-      return (await readAllSnapshots(root, sourceId)).find(
+      return (await readAllSnapshots(root, sourceId, maxHistoryFiles)).find(
         (snapshot) =>
           snapshot.bodyHash === bodyHash ||
           snapshot.bodyHash.startsWith(bodyHash),
       );
     },
-    list: (sourceId) => readAllSnapshots(root, sourceId),
+    list: (sourceId) => readAllSnapshots(root, sourceId, maxHistoryFiles),
     findExact: (reference) => findExactFilesystemSnapshot(root, reference),
   };
 }
