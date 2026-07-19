@@ -1,11 +1,17 @@
 import { createHash } from "node:crypto";
-import type { Snapshot, SnapshotStore } from "./types.js";
+import type {
+  ExactSnapshotLookupResult,
+  Snapshot,
+  SnapshotLookup,
+  SnapshotStore,
+} from "./types.js";
 
 const MAX_REFERENCE_LENGTH = 16 * 1024;
+const MAX_LEGACY_REFERENCE_LENGTH = 1024 * 1024;
 const MAX_SOURCE_ID_LENGTH = 1024;
 const MAX_URL_LENGTH = 8 * 1024;
 const MAX_FETCHED_AT_LENGTH = 256;
-const MAX_STORE_CANDIDATES = 10_000;
+const MAX_DURABLE_BODY_BYTES = 64 * 1024 * 1024;
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -44,22 +50,20 @@ function formatSnapshotSourceRef(reference: ParsedSnapshotSourceRef): string {
 
 /** Build a durable ref that commits to the body and canonical replay metadata. */
 export function buildSnapshotSourceRef(snapshot: Snapshot): string {
-  return formatSnapshotSourceRef({
+  const reference = formatSnapshotSourceRef({
     sourceId: snapshot.sourceId,
     url: snapshot.url,
     bodyHash: snapshot.bodyHash,
     fetchedAt: snapshot.fetchedAt,
     snapshotDigest: snapshotEnvelopeDigest(snapshot),
   });
+  if (reference.length > MAX_REFERENCE_LENGTH) {
+    throw new TypeError(`snapshot reference exceeds ${MAX_REFERENCE_LENGTH} characters after encoding`);
+  }
+  return reference;
 }
 
-export interface ParsedSnapshotSourceRef {
-  sourceId: string;
-  url: string;
-  bodyHash: string;
-  fetchedAt: string;
-  snapshotDigest?: string;
-}
+export interface ParsedSnapshotSourceRef extends SnapshotLookup {}
 
 export type SnapshotSourceRefResolution =
   | {
@@ -89,7 +93,7 @@ export type SnapshotSourceRefResolution =
 export function parseSnapshotSourceRef(ref: string): ParsedSnapshotSourceRef | undefined {
   if (
     typeof ref !== "string" ||
-    ref.length > MAX_REFERENCE_LENGTH ||
+    ref.length > MAX_LEGACY_REFERENCE_LENGTH ||
     !isWellFormed(ref)
   ) return undefined;
   const prefix = "forage-snapshot:";
@@ -108,14 +112,18 @@ export function parseSnapshotSourceRef(ref: string): ParsedSnapshotSourceRef | u
   const bodyHash = params.get("sha256");
   const fetchedAt = params.get("fetchedAt");
   const snapshotDigest = params.get("snapshotSha256") ?? undefined;
+  const envelopeReference = snapshotDigest !== undefined;
   if (
     !sourceId ||
-    sourceId.length > MAX_SOURCE_ID_LENGTH ||
     !url ||
-    url.length > MAX_URL_LENGTH ||
     !fetchedAt ||
-    fetchedAt.length > MAX_FETCHED_AT_LENGTH ||
-    !bodyHash
+    !bodyHash ||
+    (envelopeReference && (
+      ref.length > MAX_REFERENCE_LENGTH ||
+      sourceId.length > MAX_SOURCE_ID_LENGTH ||
+      url.length > MAX_URL_LENGTH ||
+      fetchedAt.length > MAX_FETCHED_AT_LENGTH
+    ))
   ) return undefined;
   return {
     sourceId,
@@ -140,7 +148,10 @@ function isWellFormed(value: string): boolean {
   return true;
 }
 
-function assertReferenceableSnapshot(value: unknown): asserts value is Snapshot {
+function assertSnapshotCore(
+  value: unknown,
+  releasedIdentity = false,
+): asserts value is Snapshot {
   if (typeof value !== "object" || value === null) {
     throw new TypeError("snapshot must be an object");
   }
@@ -148,20 +159,26 @@ function assertReferenceableSnapshot(value: unknown): asserts value is Snapshot 
   if (
     typeof snapshot.sourceId !== "string" ||
     !snapshot.sourceId ||
-    snapshot.sourceId.length > MAX_SOURCE_ID_LENGTH ||
+    snapshot.sourceId.length > (releasedIdentity ? MAX_LEGACY_REFERENCE_LENGTH : MAX_SOURCE_ID_LENGTH) ||
     typeof snapshot.url !== "string" ||
     !snapshot.url ||
-    snapshot.url.length > MAX_URL_LENGTH ||
+    snapshot.url.length > (releasedIdentity ? MAX_LEGACY_REFERENCE_LENGTH : MAX_URL_LENGTH) ||
     typeof snapshot.fetchedAt !== "string" ||
     !snapshot.fetchedAt ||
-    snapshot.fetchedAt.length > MAX_FETCHED_AT_LENGTH ||
+    snapshot.fetchedAt.length > (releasedIdentity ? MAX_LEGACY_REFERENCE_LENGTH : MAX_FETCHED_AT_LENGTH) ||
     typeof snapshot.bodyHash !== "string" ||
     !/^[a-f0-9]{64}$/.test(snapshot.bodyHash) ||
     !Number.isInteger(snapshot.status) ||
-    (typeof snapshot.body !== "string" && !(snapshot.body instanceof Uint8Array))
+    (typeof snapshot.body !== "string" && !(snapshot.body instanceof Uint8Array)) ||
+    (typeof snapshot.body === "string"
+      ? Buffer.byteLength(snapshot.body, "utf8")
+      : snapshot.body.byteLength) > MAX_DURABLE_BODY_BYTES
   ) {
     throw new TypeError("snapshot has an invalid durable shape");
   }
+}
+
+function snapshotStrings(snapshot: Snapshot): string[] {
   const strings = [snapshot.sourceId, snapshot.url, snapshot.fetchedAt];
   if (typeof snapshot.body === "string") strings.push(snapshot.body);
   if (snapshot.headers !== undefined) {
@@ -185,10 +202,18 @@ function assertReferenceableSnapshot(value: unknown): asserts value is Snapshot 
   if (snapshot.notModified !== undefined && snapshot.notModified !== true) {
     throw new TypeError("snapshot notModified marker may only be present as true");
   }
-  if (strings.some((entry) => !isWellFormed(entry))) {
+  return strings;
+}
+
+function assertReferenceableSnapshot(
+  value: unknown,
+  releasedIdentity = false,
+): asserts value is Snapshot {
+  assertSnapshotCore(value, releasedIdentity);
+  if (snapshotStrings(value).some((entry) => !isWellFormed(entry))) {
     throw new TypeError("snapshot strings must be well-formed UTF-16");
   }
-  if (sha256(snapshot.body) !== snapshot.bodyHash) {
+  if (sha256(value.body) !== value.bodyHash) {
     throw new TypeError("snapshot body does not match its SHA-256 digest");
   }
 }
@@ -196,6 +221,10 @@ function assertReferenceableSnapshot(value: unknown): asserts value is Snapshot 
 /** Return only the validated fields that are committed by a durable reference. */
 export function canonicalDurableSnapshot(snapshot: Snapshot): Snapshot {
   assertReferenceableSnapshot(snapshot);
+  return cloneDurableSnapshot(snapshot);
+}
+
+function cloneDurableSnapshot(snapshot: Snapshot): Snapshot {
   return {
     sourceId: snapshot.sourceId,
     url: snapshot.url,
@@ -208,6 +237,60 @@ export function canonicalDurableSnapshot(snapshot: Snapshot): Snapshot {
     ...(snapshot.headers === undefined ? {} : { headers: { ...snapshot.headers } }),
     ...(snapshot.redirects === undefined ? {} : { redirects: [...snapshot.redirects] }),
     ...(snapshot.rendered === undefined ? {} : { rendered: snapshot.rendered }),
+  };
+}
+
+function matchingSnapshot(
+  snapshot: Snapshot,
+  reference: ParsedSnapshotSourceRef,
+): boolean {
+  return snapshot.sourceId === reference.sourceId &&
+    snapshot.url === reference.url &&
+    snapshot.fetchedAt === reference.fetchedAt &&
+    (reference.snapshotDigest === undefined ||
+      snapshotEnvelopeDigest(snapshot) === reference.snapshotDigest);
+}
+
+function resolveCandidate(
+  lookup: ExactSnapshotLookupResult,
+  reference: ParsedSnapshotSourceRef,
+): SnapshotSourceRefResolution {
+  if (lookup.kind === "missing") {
+    return {
+      ok: false,
+      error: {
+        kind: "snapshot-not-found",
+        message: "the referenced snapshot is not present in the supplied store",
+      },
+    };
+  }
+  if (lookup.kind === "mismatch") {
+    return {
+      ok: false,
+      error: {
+        kind: "snapshot-mismatch",
+        message: "the stored snapshot does not exactly match the durable reference",
+      },
+    };
+  }
+  const candidate: unknown = lookup.snapshot;
+  assertReferenceableSnapshot(candidate, reference.snapshotDigest === undefined);
+  if (candidate.bodyHash !== reference.bodyHash || !matchingSnapshot(candidate, reference)) {
+    return {
+      ok: false,
+      error: {
+        kind: "snapshot-mismatch",
+        message: "the stored snapshot does not exactly match the durable reference",
+      },
+    };
+  }
+  return {
+    ok: true,
+    integrity: reference.snapshotDigest === undefined
+      ? "body-and-identity"
+      : "snapshot-envelope",
+    reference,
+    snapshot: cloneDurableSnapshot(candidate),
   };
 }
 
@@ -244,33 +327,11 @@ export async function resolveSnapshotSourceRef(
     };
   }
 
-  let matchingHash = false;
   try {
-    const candidates = await store.list(reference.sourceId);
-    if (!Array.isArray(candidates) || candidates.length > MAX_STORE_CANDIDATES) {
-      throw new TypeError("snapshot store returned an invalid candidate set");
+    if (store.findExact === undefined) {
+      throw new TypeError("snapshot store does not implement exact lookup");
     }
-    for (const snapshot of candidates) {
-      assertReferenceableSnapshot(snapshot);
-      if (snapshot.bodyHash !== reference.bodyHash) continue;
-      matchingHash = true;
-      if (
-        snapshot.sourceId === reference.sourceId &&
-        snapshot.url === reference.url &&
-        snapshot.fetchedAt === reference.fetchedAt &&
-        (reference.snapshotDigest === undefined ||
-          snapshotEnvelopeDigest(snapshot) === reference.snapshotDigest)
-      ) {
-        return {
-          ok: true,
-          integrity: reference.snapshotDigest === undefined
-            ? "body-and-identity"
-            : "snapshot-envelope",
-          reference,
-          snapshot: canonicalDurableSnapshot(snapshot),
-        };
-      }
-    }
+    return resolveCandidate(await store.findExact(reference), reference);
   } catch {
     return {
       ok: false,
@@ -280,20 +341,4 @@ export async function resolveSnapshotSourceRef(
       },
     };
   }
-  if (!matchingHash) {
-    return {
-      ok: false,
-      error: {
-        kind: "snapshot-not-found",
-        message: "the referenced snapshot is not present in the supplied store",
-      },
-    };
-  }
-  return {
-    ok: false,
-    error: {
-      kind: "snapshot-mismatch",
-      message: "the stored snapshot does not exactly match the durable reference",
-    },
-  };
 }

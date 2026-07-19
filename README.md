@@ -73,6 +73,17 @@ if (!replay.ok) throw new Error(replay.error.message);
 console.log(replay.snapshot.body);
 ```
 
+Envelope references are capped at 16 KiB after URL encoding; the builder throws
+instead of emitting a reference the parser cannot consume. References emitted
+by the released `0.3` grammar remain accepted through a bounded 1 MiB
+compatibility lane and report `integrity: "body-and-identity"`; envelope
+references report `integrity: "snapshot-envelope"`. Filesystem stores write a
+bounded exact-identity index for both forms. Existing `0.3` filesystem captures
+replay through their deterministic released filename; re-putting them builds the
+stronger current index, but is not required to resolve an existing reference.
+The current grammar is a backward-compatible extension that adds
+`snapshotSha256`; durable replay bodies are capped at 64 MiB.
+
 ## MVP policy support
 
 The current crawler implements `discovery: "links"`, `"sitemap"`, and `"both"`.
