@@ -89,7 +89,9 @@ at 10,000 JSON records. `put()` rejects and removes a newly created record that
 would exceed that bound, so a successful write cannot make later history reads
 fail. Applications with a lower retention ceiling can pass
 `maxHistoryFiles` to `createFilesystemSnapshotStore()`; the accepted range is
-1 through 10,000. The store does not silently delete evidence.
+1 through 10,000. Capacity decisions use a stale-recoverable filesystem lock
+per source, so cooperating store instances and processes cannot consume the
+same remaining slot. The store does not silently delete evidence.
 
 ## MVP policy support
 

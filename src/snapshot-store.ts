@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
+import lockfile from "proper-lockfile";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
 import type {
@@ -313,31 +314,45 @@ async function persistFilesystemSnapshot(
 ): Promise<void> {
   const directory = path.join(root, sourceDirName(snapshot.sourceId));
   await ensureRealDirectory(directory);
-  const filename = snapshotFileName(snapshot);
-  const record = path.join(directory, filename);
-  const serialized = JSON.stringify(toDiskShape(snapshot), null, 2);
-  if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_FILE_BYTES) {
-    throw new TypeError("serialized snapshot exceeds the filesystem store limit");
-  }
-  const created = await createImmutableFile(record, serialized);
-  if (!created) {
-    const existing = await readSnapshotFile(record);
-    if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
-      throw new Error("immutable snapshot record conflicts with the supplied capture");
+  let compromised: Error | undefined;
+  const release = await lockfile.lock(directory, {
+    stale: 30_000,
+    update: 5_000,
+    retries: { retries: 100, factor: 1.2, minTimeout: 10, maxTimeout: 100, randomize: true },
+    onCompromised: (error) => { compromised = error; },
+  });
+  try {
+    const filename = snapshotFileName(snapshot);
+    const record = path.join(directory, filename);
+    const serialized = JSON.stringify(toDiskShape(snapshot), null, 2);
+    if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_FILE_BYTES) {
+      throw new TypeError("serialized snapshot exceeds the filesystem store limit");
     }
-  } else {
-    const records = (await readdir(directory)).filter((name) => name.endsWith(".json"));
-    if (records.length > maxHistoryFiles) {
-      await unlink(record);
-      throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+    const created = await createImmutableFile(record, serialized);
+    if (!created) {
+      const existing = await readSnapshotFile(record);
+      if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
+        throw new Error("immutable snapshot record conflicts with the supplied capture");
+      }
+    } else {
+      const records = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+      if (records.length > maxHistoryFiles) {
+        await unlink(record);
+        throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+      }
     }
+    const indexDirectory = path.join(directory, "identity-index");
+    await ensureRealDirectory(indexDirectory);
+    await writeIdentityIndex(
+      path.join(indexDirectory, `${snapshotIdentityDigest(snapshot)}.txt`),
+      filename,
+    );
+    if (compromised !== undefined) {
+      throw new Error("snapshot history write lock was compromised", { cause: compromised });
+    }
+  } finally {
+    await release();
   }
-  const indexDirectory = path.join(directory, "identity-index");
-  await ensureRealDirectory(indexDirectory);
-  await writeIdentityIndex(
-    path.join(indexDirectory, `${snapshotIdentityDigest(snapshot)}.txt`),
-    filename,
-  );
 }
 
 async function findExactFilesystemSnapshot(

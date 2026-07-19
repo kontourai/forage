@@ -691,4 +691,34 @@ describe("@kontourai/forage/fetch public surface", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("serializes concurrent capacity decisions across filesystem store instances", async () => {
+    const initial = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-concurrency-"));
+    const candidate = (minute: number): Snapshot => {
+      const body = `model: concurrent-${minute}`;
+      return {
+        ...initial,
+        fetchedAt: `2026-07-18T12:0${minute}:00.000Z`,
+        body,
+        bodyHash: createHash("sha256").update(body).digest("hex"),
+      };
+    };
+    try {
+      const firstStore = createFilesystemSnapshotStore({ root, maxHistoryFiles: 3 });
+      const secondStore = createFilesystemSnapshotStore({ root, maxHistoryFiles: 3 });
+      await firstStore.put(initial);
+      await firstStore.put(candidate(1));
+
+      const results = await Promise.allSettled([
+        firstStore.put(candidate(2)),
+        secondStore.put(candidate(3)),
+      ]);
+      assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+      assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+      assert.equal((await firstStore.list(initial.sourceId)).length, 3);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
