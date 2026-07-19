@@ -24,6 +24,7 @@ import type { Snapshot } from "./types.js";
 
 const GLOBAL_POLITENESS = new Map<string, number>();
 const GLOBAL_ROBOTS = new Map<string, RobotsRules>();
+const MAX_ROBOTS_RESPONSE_BYTES = 256 * 1024;
 
 export function sha256Hex(body: string): string {
   return createHash("sha256").update(body, "utf8").digest("hex");
@@ -79,6 +80,44 @@ function resolveOptions(
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
+}
+
+async function readResponseBytes(
+  response: Response,
+  maxBytes: number | undefined,
+  url: string,
+): Promise<{ bytes?: Uint8Array; error?: FetchError }> {
+  if (maxBytes === undefined) return { bytes: new Uint8Array(await response.arrayBuffer()) };
+  const declared = response.headers.get("content-length");
+  if (declared !== null && /^(?:0|[1-9]\d*)$/.test(declared) && BigInt(declared) > BigInt(maxBytes)) {
+    await response.body?.cancel("declared response byte limit exceeded").catch(() => undefined);
+    return { error: { kind: "response-too-large", message: `response from ${url} exceeds ${maxBytes} bytes` } };
+  }
+  if (response.body === null) return { bytes: new Uint8Array() };
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel("response byte limit exceeded").catch(() => undefined);
+        return { error: { kind: "response-too-large", message: `response from ${url} exceeds ${maxBytes} bytes` } };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { bytes };
 }
 
 function backoffMs(attempt: number, random: () => number): number {
@@ -163,7 +202,21 @@ async function loadRobots(
     resolved.robotsCache.set(origin, rules);
     return { rules };
   }
-  const rules = parseRobots(await response.text(), userAgent);
+  let body: Uint8Array;
+  try {
+    const read = await readResponseBytes(response, MAX_ROBOTS_RESPONSE_BYTES, `${origin}/robots.txt`);
+    if (read.error || read.bytes === undefined) {
+      const rules: RobotsRules = { rules: [], sitemaps: [] };
+      resolved.robotsCache.set(origin, rules);
+      return { rules, warning: `robots.txt for ${origin} exceeded ${MAX_ROBOTS_RESPONSE_BYTES} bytes; proceeding (fail-open)` };
+    }
+    body = read.bytes;
+  } catch (error) {
+    const rules: RobotsRules = { rules: [], sitemaps: [] };
+    resolved.robotsCache.set(origin, rules);
+    return { rules, warning: `robots.txt for ${origin} could not be read (${error instanceof Error ? error.message : String(error)}); proceeding (fail-open)` };
+  }
+  const rules = parseRobots(new TextDecoder().decode(body), userAgent);
   resolved.robotsCache.set(origin, rules);
   return { rules };
 }
@@ -286,7 +339,10 @@ async function maybeRenderSnapshot(
       testOnlyAllowedLoopbackOrigins:
         config.egress.testOnlyAllowedLoopbackOrigins,
     });
-    const rendered = await renderImpl(requestedUrl, { timeoutMs });
+    const rendered = await renderImpl(requestedUrl, {
+      timeoutMs,
+      maxResponseBytes: options.maxResponseBytes,
+    });
     warnings.push(...(rendered.warnings ?? []));
     return {
       ...plain,
@@ -302,6 +358,23 @@ async function maybeRenderSnapshot(
   }
 }
 
+function snapshotBodyByteLength(snapshot: Snapshot): number {
+  return typeof snapshot.body === "string"
+    ? Buffer.byteLength(snapshot.body, "utf8")
+    : snapshot.body.byteLength;
+}
+
+function snapshotBoundError(
+  snapshot: Snapshot,
+  maxBytes: number | undefined,
+): FetchError | undefined {
+  if (maxBytes === undefined || snapshotBodyByteLength(snapshot) <= maxBytes) return undefined;
+  return {
+    kind: "response-too-large",
+    message: `snapshot from ${snapshot.url} exceeds ${maxBytes} bytes`,
+  };
+}
+
 /** Fetch one source. Operational outcomes are returned, never thrown. */
 export async function fetchSource(
   config: SourceConfig,
@@ -313,6 +386,12 @@ export async function fetchSource(
       return {
         error: { kind: "invalid-config", message: "SourceConfig.id is required" },
       };
+    }
+    if (
+      options.maxResponseBytes !== undefined &&
+      (!Number.isSafeInteger(options.maxResponseBytes) || options.maxResponseBytes <= 0)
+    ) {
+      return { error: { kind: "invalid-config", message: "maxResponseBytes must be a positive safe integer" } };
     }
     let startUrl: URL;
     try {
@@ -452,6 +531,8 @@ export async function fetchSource(
           timeoutMs,
           warnings,
         );
+        const boundError = snapshotBoundError(acquired, options.maxResponseBytes);
+        if (boundError) return withWarnings({ error: boundError }, warnings);
         // Flag the RETURNED snapshot transiently — never mutate `prior` (the
         // object read from the store) and never persist this flag ourselves;
         // fetchSource only reads a SnapshotStore, it never writes one. See
@@ -543,7 +624,9 @@ export async function fetchSource(
 
       let bytes: Uint8Array;
       try {
-        bytes = new Uint8Array(await response.arrayBuffer());
+        const read = await readResponseBytes(response, options.maxResponseBytes, currentUrl.href);
+        if (read.error) return withWarnings({ error: read.error }, warnings);
+        bytes = read.bytes!;
       } catch (error) {
         return withWarnings(
           {
@@ -579,6 +662,8 @@ export async function fetchSource(
         timeoutMs,
         warnings,
       );
+      const boundError = snapshotBoundError(acquired, options.maxResponseBytes);
+      if (boundError) return withWarnings({ error: boundError }, warnings);
       return withWarnings({ snapshot: acquired }, warnings);
     }
     return withWarnings(

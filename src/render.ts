@@ -212,6 +212,12 @@ export function createForageRenderImpl(
         });
       }
       const html = await page.content();
+      if (
+        renderOptions?.maxResponseBytes !== undefined &&
+        Buffer.byteLength(html, "utf8") > renderOptions.maxResponseBytes
+      ) {
+        throw new Error(`rendered response exceeds ${renderOptions.maxResponseBytes} bytes`);
+      }
       return {
         html,
         ...(usedNetworkidleFallback

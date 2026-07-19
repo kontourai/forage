@@ -73,6 +73,16 @@ if (!replay.ok) throw new Error(replay.error.message);
 console.log(replay.snapshot.body);
 ```
 
+Direct acquisitions can enforce a source-specific body ceiling across plain,
+rendered, and validator-backed snapshots. Oversized declared lengths fail
+early, while streamed and final snapshot checks remain authoritative when the
+header is absent, incorrect, or replaced by rendered HTML:
+
+```ts
+const result = await fetchSource(source, { maxResponseBytes: 8 * 1024 * 1024 });
+if (result.error?.kind === "response-too-large") throw new Error(result.error.message);
+```
+
 Envelope references are capped at 16 KiB after URL encoding; the builder throws
 instead of emitting a reference the parser cannot consume. References emitted
 by the released `0.3` grammar remain accepted through a bounded 1 MiB
