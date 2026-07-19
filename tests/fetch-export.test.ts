@@ -659,10 +659,34 @@ describe("@kontourai/forage/fetch public surface", () => {
       await writeFile(path.join(sourceRoot, "malformed.json"), "{", "utf8");
       await writeFile(path.join(sourceRoot, "oversized.json"), "", "utf8");
       await truncate(path.join(sourceRoot, "oversized.json"), 96 * 1024 * 1024 + 1);
+      await writeFile(path.join(sourceRoot, "wrong-source.json"), JSON.stringify({
+        ...snapshot,
+        sourceId: "different-source",
+      }), "utf8");
 
       assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
       assert.deepEqual(await filesystem.latest(snapshot.sourceId), snapshot);
       assert.deepEqual(await filesystem.get(snapshot.sourceId, snapshot.bodyHash), snapshot);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a write beyond the configured history bound without corrupting prior records", async () => {
+    const first = replaySnapshot();
+    const secondBody = "model: later-result";
+    const second: Snapshot = {
+      ...first,
+      fetchedAt: "2026-07-18T12:01:00.000Z",
+      body: secondBody,
+      bodyHash: createHash("sha256").update(secondBody).digest("hex"),
+    };
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-write-bound-"));
+    try {
+      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 1 });
+      await store.put(first);
+      await assert.rejects(store.put(second), /snapshot history exceeds 1 records/);
+      assert.deepEqual(await store.list(first.sourceId), [first]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

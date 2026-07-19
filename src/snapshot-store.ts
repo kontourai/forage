@@ -262,9 +262,23 @@ function compareDescending(left: string, right: string): number {
 
 export interface FilesystemSnapshotStoreOptions {
   root: string;
+  /** Maximum JSON record files retained per source directory. Defaults to 10,000. */
+  maxHistoryFiles?: number;
 }
 
-async function readAllSnapshots(root: string, sourceId: string): Promise<Snapshot[]> {
+function resolveMaxHistoryFiles(value: number | undefined): number {
+  if (value === undefined) return MAX_HISTORY_FILES;
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_HISTORY_FILES) {
+    throw new TypeError(`maxHistoryFiles must be an integer from 1 to ${MAX_HISTORY_FILES}`);
+  }
+  return value;
+}
+
+async function readAllSnapshots(
+  root: string,
+  sourceId: string,
+  maxHistoryFiles: number,
+): Promise<Snapshot[]> {
   const directory = path.join(root, sourceDirName(sourceId));
   let names: string[];
   try {
@@ -274,8 +288,8 @@ async function readAllSnapshots(root: string, sourceId: string): Promise<Snapsho
     throw error;
   }
   const records = names.filter((name) => name.endsWith(".json"));
-  if (records.length > MAX_HISTORY_FILES) {
-    throw new Error(`snapshot history exceeds ${MAX_HISTORY_FILES} records`);
+  if (records.length > maxHistoryFiles) {
+    throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
   }
   const snapshots = new Map<string, Snapshot>();
   for (const name of records) {
@@ -283,6 +297,7 @@ async function readAllSnapshots(root: string, sourceId: string): Promise<Snapsho
       const parsed = await readSnapshotFile(path.join(directory, name));
       if (parsed === undefined) continue;
       const durable = canonicalDurableSnapshot(parsed);
+      if (durable.sourceId !== sourceId) continue;
       snapshots.set(snapshotEnvelopeDigest(durable), durable);
     } catch {
       // Malformed or foreign content does not poison the store.
@@ -291,7 +306,11 @@ async function readAllSnapshots(root: string, sourceId: string): Promise<Snapsho
   return sortSnapshots([...snapshots.values()]);
 }
 
-async function persistFilesystemSnapshot(root: string, snapshot: Snapshot): Promise<void> {
+async function persistFilesystemSnapshot(
+  root: string,
+  snapshot: Snapshot,
+  maxHistoryFiles: number,
+): Promise<void> {
   const directory = path.join(root, sourceDirName(snapshot.sourceId));
   await ensureRealDirectory(directory);
   const filename = snapshotFileName(snapshot);
@@ -300,10 +319,17 @@ async function persistFilesystemSnapshot(root: string, snapshot: Snapshot): Prom
   if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_FILE_BYTES) {
     throw new TypeError("serialized snapshot exceeds the filesystem store limit");
   }
-  if (!await createImmutableFile(record, serialized)) {
+  const created = await createImmutableFile(record, serialized);
+  if (!created) {
     const existing = await readSnapshotFile(record);
     if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
       throw new Error("immutable snapshot record conflicts with the supplied capture");
+    }
+  } else {
+    const records = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+    if (records.length > maxHistoryFiles) {
+      await unlink(record);
+      throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
     }
   }
   const indexDirectory = path.join(directory, "identity-index");
@@ -355,20 +381,21 @@ export function createFilesystemSnapshotStore(
   options: FilesystemSnapshotStoreOptions,
 ): ExactSnapshotStore {
   const root = path.resolve(options.root);
+  const maxHistoryFiles = resolveMaxHistoryFiles(options.maxHistoryFiles);
 
   return {
-    put: (snapshot) => persistFilesystemSnapshot(root, snapshot),
+    put: (snapshot) => persistFilesystemSnapshot(root, snapshot, maxHistoryFiles),
     async latest(sourceId) {
-      return (await readAllSnapshots(root, sourceId))[0];
+      return (await readAllSnapshots(root, sourceId, maxHistoryFiles))[0];
     },
     async get(sourceId, bodyHash) {
-      return (await readAllSnapshots(root, sourceId)).find(
+      return (await readAllSnapshots(root, sourceId, maxHistoryFiles)).find(
         (snapshot) =>
           snapshot.bodyHash === bodyHash ||
           snapshot.bodyHash.startsWith(bodyHash),
       );
     },
-    list: (sourceId) => readAllSnapshots(root, sourceId),
+    list: (sourceId) => readAllSnapshots(root, sourceId, maxHistoryFiles),
     findExact: (reference) => findExactFilesystemSnapshot(root, reference),
   };
 }
