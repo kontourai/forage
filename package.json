@@ -1,6 +1,6 @@
 {
   "name": "@kontourai/forage",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Safe, replayable web crawling for review pipelines — a crawler for untrusted URLs.",
   "type": "module",
   "repository": {
