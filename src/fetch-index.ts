@@ -36,6 +36,10 @@ export type {
 export {
   buildSnapshotSourceRef,
   parseSnapshotSourceRef,
+  resolveSnapshotSourceRef,
 } from "./provenance.js";
-export type { ParsedSnapshotSourceRef } from "./provenance.js";
+export type {
+  ParsedSnapshotSourceRef,
+  SnapshotSourceRefResolution,
+} from "./provenance.js";
 export type { Snapshot, SnapshotStore } from "./types.js";

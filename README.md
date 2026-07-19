@@ -60,6 +60,19 @@ for (const page of manifest.pages) {
 }
 ```
 
+Consumers that process a cited snapshot offline can resolve the exact durable
+reference without duplicating the provenance grammar or accepting a hash prefix.
+The reference commits separately to the body bytes and to the canonical replay
+metadata (status, headers, redirects, render state, and body representation):
+
+```ts
+import { resolveSnapshotSourceRef } from "@kontourai/forage/fetch";
+
+const replay = await resolveSnapshotSourceRef(store, page.sourceRef);
+if (!replay.ok) throw new Error(replay.error.message);
+console.log(replay.snapshot.body);
+```
+
 ## MVP policy support
 
 The current crawler implements `discovery: "links"`, `"sitemap"`, and `"both"`.

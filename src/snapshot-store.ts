@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FetchResult } from "./internal-types.js";
+import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
 import type { Snapshot, SnapshotStore } from "./types.js";
 
 function sourceDirName(sourceId: string): string {
@@ -19,16 +20,18 @@ function sourceDirName(sourceId: string): string {
 }
 
 function snapshotFileName(snapshot: Snapshot): string {
-  const timestamp = snapshot.fetchedAt.replace(/[^0-9A-Za-z._-]/g, "-");
-  const hash = snapshot.bodyHash.replace(/[^0-9a-f]/gi, "").slice(0, 12);
-  return `${timestamp}-${hash || "snapshot"}.json`;
+  const timestamp = snapshot.fetchedAt
+    .replace(/[^0-9A-Za-z._-]/g, "-")
+    .slice(0, 80) || "snapshot";
+  return `${timestamp}-${snapshotEnvelopeDigest(snapshot)}.json`;
 }
 
 function toDiskShape(snapshot: Snapshot): Record<string, unknown> {
-  if (!(snapshot.body instanceof Uint8Array)) {
-    return snapshot as unknown as Record<string, unknown>;
+  const durable = canonicalDurableSnapshot(snapshot);
+  if (!(durable.body instanceof Uint8Array)) {
+    return durable as unknown as Record<string, unknown>;
   }
-  const { body, ...rest } = snapshot;
+  const { body, ...rest } = durable;
   return { ...rest, bodyBase64: Buffer.from(body).toString("base64") };
 }
 
@@ -79,8 +82,9 @@ export function createFilesystemSnapshotStore(
     let names: string[];
     try {
       names = await readdir(directory);
-    } catch {
-      return [];
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
     }
     const snapshots: Snapshot[] = [];
     for (const name of names) {
@@ -124,14 +128,7 @@ export function createFilesystemSnapshotStore(
 }
 
 function cloneSnapshot(snapshot: Snapshot): Snapshot {
-  return {
-    ...snapshot,
-    body:
-      snapshot.body instanceof Uint8Array
-        ? new Uint8Array(snapshot.body)
-        : snapshot.body,
-    headers: snapshot.headers ? { ...snapshot.headers } : undefined,
-  };
+  return canonicalDurableSnapshot(snapshot);
 }
 
 export function createInMemorySnapshotStore(): SnapshotStore {
