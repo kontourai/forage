@@ -78,12 +78,7 @@ jobs:
           fi
 
       - name: Verify Tagged Commit Is On Main
-        run: |
-          git fetch origin main --depth=1
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "FETCH_HEAD"; then
-            echo "Tagged commit ${GITHUB_SHA} is not reachable from the fetched origin/main tip" >&2
-            exit 1
-          fi
+        run: scripts/check-release-tag-ancestry.sh "${GITHUB_SHA}"
 
       - name: Check Published Version
         id: published

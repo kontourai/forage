@@ -34,8 +34,9 @@
     "build": "rm -rf dist && tsc",
     "prepare": "npm run build",
     "test": "npm run build && node --test dist/tests/*.test.js",
+    "test:release-tag-ancestry": "scripts/check-release-tag-ancestry.sh --self-test",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm test"
+    "verify": "npm run typecheck && npm test && npm run test:release-tag-ancestry"
   },
   "license": "Apache-2.0",
   "publishConfig": {
