@@ -10,6 +10,20 @@
 
 ### Fixes
 
+* bound fetched snapshot bodies ([#22](https://github.com/kontourai/forage/issues/22)) [skip ci] ([13143c8](https://github.com/kontourai/forage/commit/13143c8e486d45847a30665b8588a7608a211678))
+* harden filesystem snapshot history [skip ci] ([a92f835](https://github.com/kontourai/forage/commit/a92f83528c560720cd075edcb0e42fd03d7c9147))
+* restore released version authority ([#24](https://github.com/kontourai/forage/issues/24)) [skip ci] ([1a4b397](https://github.com/kontourai/forage/commit/1a4b3973ffb18ce7b72dce0ff0e1ab72c277a6ad))
+
+## [0.4.0](https://github.com/kontourai/forage/compare/v0.3.0...v0.4.0) (2026-07-19)
+
+
+### Features
+
+* resolve exact snapshots from durable references ([#16](https://github.com/kontourai/forage/issues/16)) ([3b9fb3b](https://github.com/kontourai/forage/commit/3b9fb3b26ee3ac7028b2a9a9b9525a73cdeb2823)), closes [#15](https://github.com/kontourai/forage/issues/15)
+
+
+### Fixes
+
 * make immutable filesystem records crash-atomic, bound and canonicalize history, enforce source isolation, and reserve writes at the configured retention ceiling before the initial 0.4.0 publication
 
 ## [0.3.0](https://github.com/kontourai/forage/compare/v0.2.0...v0.3.0) (2026-07-17)
