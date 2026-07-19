@@ -407,9 +407,18 @@ describe("@kontourai/forage/fetch public surface", () => {
       await filesystem.put(snapshot);
       const [sourceDirectory] = await readdir(root);
       const sourceRoot = path.join(root, sourceDirectory);
+      const releasedFilename = `${snapshot.fetchedAt.replace(/[^0-9A-Za-z._-]/g, "-")}-${snapshot.bodyHash.slice(0, 12)}.json`;
+      await writeFile(path.join(sourceRoot, releasedFilename), JSON.stringify({
+        ...snapshot,
+        notModified: true,
+        unknown: "must not survive",
+      }, null, 2));
+      await filesystem.put(snapshot);
+      assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
+      assert.deepEqual(await filesystem.latest(snapshot.sourceId), snapshot);
+
       await rm(sourceRoot, { recursive: true, force: true });
       await mkdir(sourceRoot, { recursive: true });
-      const releasedFilename = `${snapshot.fetchedAt.replace(/[^0-9A-Za-z._-]/g, "-")}-${snapshot.bodyHash.slice(0, 12)}.json`;
       await writeFile(path.join(sourceRoot, releasedFilename), JSON.stringify(snapshot, null, 2));
       const filesystemResult = await resolveSnapshotSourceRef(filesystem, ref);
       assert.equal(filesystemResult.ok, true);
@@ -637,6 +646,25 @@ describe("@kontourai/forage/fetch public surface", () => {
       await assertStoreError(filesystem, snapshot);
     } finally {
       await rm(malformedRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds history reads and isolates foreign filesystem entries", async () => {
+    const snapshot = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-history-bounds-"));
+    try {
+      const { filesystem, record } = await recordPath(root, snapshot);
+      const sourceRoot = path.dirname(record);
+      await mkdir(path.join(sourceRoot, "foreign.json"));
+      await writeFile(path.join(sourceRoot, "malformed.json"), "{", "utf8");
+      await writeFile(path.join(sourceRoot, "oversized.json"), "", "utf8");
+      await truncate(path.join(sourceRoot, "oversized.json"), 96 * 1024 * 1024 + 1);
+
+      assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
+      assert.deepEqual(await filesystem.latest(snapshot.sourceId), snapshot);
+      assert.deepEqual(await filesystem.get(snapshot.sourceId, snapshot.bodyHash), snapshot);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

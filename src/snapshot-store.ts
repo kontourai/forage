@@ -1,6 +1,6 @@
 /** Filesystem and in-memory stores lifted from traverse/fetch/snapshot-store.ts. */
 import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readdir, readFile, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 
 const MAX_SNAPSHOT_FILE_BYTES = 96 * 1024 * 1024;
+const MAX_HISTORY_FILES = 10_000;
 const MAX_LOOKUP_FIELD_LENGTH = 1024 * 1024;
 const MAX_SOURCE_ID_LENGTH = 1024;
 const MAX_URL_LENGTH = 8 * 1024;
@@ -248,9 +249,15 @@ function isSnapshot(value: unknown): value is Snapshot {
 function sortSnapshots(snapshots: Snapshot[]): Snapshot[] {
   return snapshots.sort((left, right) =>
     left.fetchedAt === right.fetchedAt
-      ? right.bodyHash.localeCompare(left.bodyHash)
-      : right.fetchedAt.localeCompare(left.fetchedAt),
+      ? left.bodyHash === right.bodyHash
+        ? compareDescending(snapshotEnvelopeDigest(left), snapshotEnvelopeDigest(right))
+        : compareDescending(left.bodyHash, right.bodyHash)
+      : compareDescending(left.fetchedAt, right.fetchedAt),
   );
+}
+
+function compareDescending(left: string, right: string): number {
+  return left < right ? 1 : left > right ? -1 : 0;
 }
 
 export interface FilesystemSnapshotStoreOptions {
@@ -266,18 +273,22 @@ async function readAllSnapshots(root: string, sourceId: string): Promise<Snapsho
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
-  const snapshots: Snapshot[] = [];
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
-    const text = await readFile(path.join(directory, name), "utf8");
+  const records = names.filter((name) => name.endsWith(".json"));
+  if (records.length > MAX_HISTORY_FILES) {
+    throw new Error(`snapshot history exceeds ${MAX_HISTORY_FILES} records`);
+  }
+  const snapshots = new Map<string, Snapshot>();
+  for (const name of records) {
     try {
-      const parsed = fromDiskShape(JSON.parse(text));
-      if (isSnapshot(parsed)) snapshots.push(parsed);
+      const parsed = await readSnapshotFile(path.join(directory, name));
+      if (parsed === undefined) continue;
+      const durable = canonicalDurableSnapshot(parsed);
+      snapshots.set(snapshotEnvelopeDigest(durable), durable);
     } catch {
       // Malformed or foreign content does not poison the store.
     }
   }
-  return sortSnapshots(snapshots);
+  return sortSnapshots([...snapshots.values()]);
 }
 
 async function persistFilesystemSnapshot(root: string, snapshot: Snapshot): Promise<void> {
