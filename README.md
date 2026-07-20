@@ -60,6 +60,26 @@ for (const page of manifest.pages) {
 }
 ```
 
+**Smoke-testing against a local fixture.** The default guarded egress policy
+will reject a `localhost`/`127.0.0.1` URL on a nonstandard port — that's the
+SSRF guard doing its job (`egress-denied: ... (INVALID_PORT)`), not a bug. For
+local fixtures (a test server, a dev-time crawl target) opt a specific
+loopback origin in explicitly, never in production:
+
+```ts
+const manifest = await crawl(
+  { url: "http://127.0.0.1:4173/" },
+  {
+    maxPages: 1,
+    egress: {
+      guarded: true,
+      // test-only escape hatch: exact loopback origins, never production hostnames.
+      testOnlyAllowedLoopbackOrigins: ["http://127.0.0.1:4173"],
+    },
+  },
+);
+```
+
 Consumers that process a cited snapshot offline can resolve the exact durable
 reference without duplicating the provenance grammar or accepting a hash prefix.
 The reference commits separately to the body bytes and to the canonical replay
@@ -105,6 +125,62 @@ so cooperating store instances and processes cannot consume the same remaining
 slot. A process interrupted after reservation can complete the same immutable
 snapshot idempotently on retry. The store does not silently delete evidence.
 
+## Guarded single-URL fetch (`@kontourai/forage/egress`)
+
+The package root stays focused on `crawl()`; consumers that need the
+SSRF/DNS-rebinding-safe egress guard for a **single URL** — without pulling in
+the full crawl frontier — import it from the `./egress` subpath instead:
+
+```ts
+import { createGuardedFetch } from "@kontourai/forage/egress";
+
+// A fetch-shaped function: resolve the hostname once, validate every DNS
+// answer against the private/loopback/link-local/metadata deny-lists, connect
+// to the one validated public IP (defeating DNS rebinding), and re-validate
+// every redirect hop.
+const guardedFetch = createGuardedFetch();
+const response = await guardedFetch("https://a-provider-you-dont-fully-trust.example/");
+```
+
+Drop `createGuardedFetch()`'s return value into any `fetch`-shaped seam (e.g.
+an `opts.fetch` injection point) to get the exact same pinned-egress
+protection `crawl()` uses internally. It rejects a denied target by throwing
+`EgressUrlPolicyError` (`err.code` is one of the `EgressPolicyErrorCode`
+values — `DENIED_ADDRESS`, `INVALID_PORT`, `REDIRECT_CROSS_HOST`, etc.)
+instead of ever making the disallowed request:
+
+```ts
+import { createGuardedFetch, EgressUrlPolicyError } from "@kontourai/forage/egress";
+
+try {
+  await createGuardedFetch()("http://127.0.0.1:4173/internal");
+} catch (err) {
+  if (err instanceof EgressUrlPolicyError) {
+    console.error(err.code, err.message); // "INVALID_PORT", "Server egress rejected (INVALID_PORT) for 127.0.0.1"
+  }
+}
+```
+
+Lower-level building blocks are exported too, for callers that need to
+classify or pre-check a target without issuing a request:
+
+- **`evaluateEgressUrl(url, deps?)`** — resolves and validates a URL's
+  hostname (DNS + address classification + host/port/scheme checks) without
+  fetching it; returns `{ url, addresses }` or throws `EgressUrlPolicyError`.
+  Accepts an injectable `resolver` (for tests) and the same
+  `testOnlyAllowedLoopbackOrigins` escape hatch described below.
+- **`classifyAddress(address, safeHost?)`** — classifies a single resolved IP
+  literal against the deny-lists (private/loopback/link-local/metadata/NAT64
+  ranges); throws `EgressUrlPolicyError` with code `DENIED_ADDRESS` /
+  `INVALID_HOST` on a disallowed address.
+
+For local fixtures, `createGuardedFetch`/`evaluateEgressUrl` accept the same
+test-only `testOnlyAllowedLoopbackOrigins` escape hatch as `crawl()`'s
+`egress` policy — see "Smoke-testing against a local fixture" above.
+
+This is the same guard `lookout` uses in production for single-URL egress
+outside a full crawl.
+
 ## MVP policy support
 
 The current crawler implements `discovery: "links"`, `"sitemap"`, and `"both"`.
@@ -121,14 +197,19 @@ and sequential frontier.
 
 ## Where it sits
 
-`campfit → traverse → forage`. Dependencies point only downward; each layer is
-usable alone:
+The target shape is `campfit → traverse → forage`, with dependencies pointing
+only downward so each layer is usable alone. **traverse has adopted forage**
+today (its `/fetch` subpath composes forage's crawl + guarded egress);
+**campfit's adoption is still pending** — it does not yet depend on forage and
+still carries its own `lib/security/egress-url-policy.ts` /
+`lib/ingestion/render-fetch.ts`.
 
 - **forage** — crawling + safe egress + provenance. Knows nothing about extraction.
 - **traverse** — schema-directed extraction (`content + schema → reviewable
   proposals`). Depends on forage for its fetch/compose convenience.
-- **campfit** — the app: crawl with forage, extract with traverse, review.
+- **campfit** — the app: crawl with forage, extract with traverse, review
+  (once it migrates off its own egress/render code onto forage).
 
 See [DESIGN.md](./DESIGN.md) for the public surface, the SSRF/replay rationale,
-and the migration lifting the crawler out of `traverse/fetch` + the egress guard
-out of `campfit`.
+and the migration sequence lifting the crawler out of `traverse/fetch` and,
+eventually, the egress guard out of `campfit`.

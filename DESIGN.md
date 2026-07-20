@@ -11,7 +11,9 @@ for the rest (frontier, robots, sitemaps, adaptive render).
 
 ```ts
 crawl(seed: Seed, policy?: CrawlPolicy): Promise<CrawlManifest>;
-// streaming variant: crawlStream(seed, policy): AsyncIterable<Page>
+// A streaming variant (crawlStream(seed, policy): AsyncIterable<Page>) has
+// been discussed but is NOT implemented or exported — crawl() is the only
+// public crawl entry point today.
 
 interface Seed {
   url: string;
