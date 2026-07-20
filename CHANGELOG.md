@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/kontourai/forage/compare/v0.4.1...v0.4.2) (2026-07-20)
+
+
+### Documentation
+
+* content sweep — accuracy and clarity fixes ([#30](https://github.com/kontourai/forage/issues/30)) ([bdd3b83](https://github.com/kontourai/forage/commit/bdd3b83ff975b641fe4aaf289632af3d3e453370))
+
 ## [0.4.1](https://github.com/kontourai/forage/compare/v0.4.0...v0.4.1) (2026-07-19)
 
 
