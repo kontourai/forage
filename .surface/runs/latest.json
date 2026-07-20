@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "kind": "surface-console-index",
-  "latestRunId": "independent-rollout-verification-forage",
-  "readModelPath": ".surface/runs/independent-rollout-verification-forage.console.json",
-  "evidenceArtifactPath": ".kontourai/veritas/evidence/independent-rollout-verification-forage.json",
-  "updatedAt": "2026-07-20T15:13:39.514Z"
-}
