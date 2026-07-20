@@ -40,6 +40,11 @@ jobs:
           set -e
           echo "Veritas advisory readiness exit: $status" >> "$GITHUB_STEP_SUMMARY"
           echo "This rollout is observe-only; promotion to blocking enforcement requires a separate approval." >> "$GITHUB_STEP_SUMMARY"
+          report=".kontourai/veritas/evidence/github-${{ github.run_id }}.json"
+          if [ ! -s "$report" ]; then
+            echo "Veritas did not produce the required evidence artifact: $report" >&2
+            exit 1
+          fi
       - name: Upload Veritas evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

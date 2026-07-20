@@ -37,16 +37,16 @@ This repo was bootstrapped for `forage` with a conservative starter kit for agen
 ## Suggested Commands
 
 ```bash
-npx @kontourai/veritas readiness --working-tree
-npx @kontourai/veritas readiness --check coverage --working-tree
-npx @kontourai/veritas integrations codex status
-npx @kontourai/veritas attest bootstrap --actor <authority-id> --approval-ref <human-approval-reference> --non-interactive
+npm exec --yes --package=@kontourai/veritas@1.5.2 -- veritas readiness --working-tree
+npm exec --yes --package=@kontourai/veritas@1.5.2 -- veritas readiness --check coverage --working-tree
+npm exec --yes --package=@kontourai/veritas@1.5.2 -- veritas integrations codex status
+npm exec --yes --package=@kontourai/veritas@1.5.2 -- veritas attest bootstrap --actor <authority-id> --approval-ref <human-approval-reference> --non-interactive
 ```
 
 If you prefer explicit paths:
 
 ```bash
-npx @kontourai/veritas readiness --check evidence \
+npm exec --yes --package=@kontourai/veritas@1.5.2 -- veritas readiness --check evidence \
   --repo-map ./.veritas/repo-map.json \
   --repo-standards ./.veritas/repo-standards/default.repo-standards.json \
   package.json
