@@ -1,0 +1,45 @@
+# Trust Verify — adopts the Flow Agents external trust anchor on this repo
+# (ADVISORY phase: reports but does not yet block merges).
+#
+# On every PR, re-runs this repo's canonical verification FRESH in a clean CI
+# environment an agent does not control (`npm run verify`: typecheck, build +
+# tests, and the release-tag-ancestry self-test). If a Flow Agents session has
+# published delivery/trust.bundle, it also RECONCILES the agent's claimed passes
+# against CI's own fresh results and fails on any divergence. When no bundle is
+# present, only the fresh verify is enforced (fail-open on bundle absence;
+# fail-closed on divergence when present).
+#
+# To ARM it: add "Trust Verify" as a required, no-bypass status check in this
+# repo's branch protection (Settings -> Branches -> main). Until then it runs and
+# reports but does not block merges.
+#
+# Adoption guide: https://github.com/kontourai/flow-agents/blob/main/docs/trust-anchor-adoption.md
+name: Trust Verify
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  trust-verify:
+    name: Trust Verify
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth 0: the reconciler binds delivery bundles to commits via
+      # `git merge-base --is-ancestor`, which cannot walk a shallow clone —
+      # with the default depth-1 checkout every committed bundle looks stale
+      # in CI (sealed commit never equals the synthetic merge SHA).
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm ci
+      # The external anchor: re-run our real verify fresh + reconcile any delivered bundle.
+      # SHA-pinned (mutable tags are not trusted for a cross-repo action that gates merges).
+      - uses: kontourai/flow-agents/.github/actions/trust-verify@f2efb33ef683793bbec01dcf7e909f3e1423c04d # flow-agents @ locked action runtime dependencies
+        with:
+          verify-command: "npm run verify"
