@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "name": "forage-default",
+  "description": "Conservative starter Repo Standards for a newly bootstrapped Veritas-enabled repository.",
+  "rules": [
+    {
+      "id": "required-veritas-artifacts",
+      "kind": "required-artifacts",
+      "classification": "hard-invariant",
+      "enforcementLevel": "Require",
+      "message": "The bootstrap Veritas artifacts must stay present so agents and reviewers share the same baseline.",
+      "owner": "repo-core",
+      "rollback_switch": null,
+      "match": {
+        "artifacts": [
+          ".veritas/README.md",
+          ".veritas/GOVERNANCE.md",
+          ".veritas/repo-map.json",
+          ".veritas/repo-standards/default.repo-standards.json",
+          ".veritas/authority/default.authority-settings.json"
+        ]
+      }
+    },
+    {
+      "id": "ai-instruction-files-synced",
+      "kind": "governance-block",
+      "classification": "hard-invariant",
+      "enforcementLevel": "Guide",
+      "message": "All required AI tool instruction files must contain the Veritas guidance block.",
+      "owner": "repo-maintainers",
+      "rollback_switch": null,
+      "match": {
+        "governance-block": []
+      }
+    },
+    {
+      "id": "prefer-veritas-routed-delivery",
+      "kind": "required-artifacts",
+      "classification": "promotable-policy",
+      "enforcementLevel": "Observe",
+      "message": "Prefer running new AI-guided changes through Veritas readiness checks and the documented evidenceCheck before review.",
+      "owner": "repo-maintainers",
+      "rollback_switch": "soften-veritas-route",
+      "match": {
+        "artifacts": [
+          ".veritas/README.md"
+        ]
+      }
+    }
+  ]
+}

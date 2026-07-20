@@ -1,0 +1,124 @@
+{
+  "name": "forage",
+  "kind": "repo-map",
+  "policy": {
+    "defaultFalsePositiveReview": "unknown",
+    "defaultPromotionCandidate": false,
+    "defaultExceptionAllowed": false
+  },
+  "graph": {
+    "version": 1,
+    "defaultResolution": {
+      "phase": "Phase 0 (Bootstrap)",
+      "workstream": "Initial Project Setup",
+      "matchedArtifacts": [
+        "README.md"
+      ]
+    },
+    "nonSliceableInvariants": [
+      "baseline evidenceCheck",
+      "repo-local guidance",
+      "tracked standards artifacts"
+    ],
+    "resolverPrecedence": [
+      "explicit task or issue reference",
+      "matching local artifact under .veritas/**",
+      "active repo roadmap or README guidance",
+      "multi-workstream fallback suppresses promotion"
+    ],
+    "resolutionRules": [
+      {
+        "id": "veritas-files",
+        "match": {
+          "patterns": [
+            ".veritas/"
+          ]
+        },
+        "resolution": {
+          "phase": "Phase 0 (Bootstrap)",
+          "workstream": "Initial Project Setup",
+          "matchedArtifacts": [
+            ".veritas/**"
+          ]
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "id": "governance.guidance",
+        "kind": "protected-area",
+        "label": ".veritas/**",
+        "patterns": [
+          ".veritas/"
+        ],
+        "governance-locked": true
+      },
+      {
+        "id": "governance.root-manifests",
+        "kind": "protected-area",
+        "label": "root manifests",
+        "patterns": [
+          "package.json",
+          "package-lock.json",
+          "README.md",
+          ".gitignore",
+          "AGENTS.md"
+        ]
+      },
+      {
+        "id": "delivery.workflows",
+        "kind": "delivery-area",
+        "label": ".github/**",
+        "patterns": [
+          ".github/"
+        ]
+      },
+      {
+        "id": "tooling.scripts",
+        "kind": "tooling-area",
+        "label": "scripts/**",
+        "patterns": [
+          "scripts/"
+        ]
+      },
+      {
+        "id": "app.src",
+        "kind": "product-area",
+        "label": "src/**",
+        "patterns": [
+          "src/"
+        ]
+      },
+      {
+        "id": "verification.tests",
+        "kind": "verification-area",
+        "label": "tests/**",
+        "patterns": [
+          "tests/"
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "artifactDir": ".kontourai/veritas/evidence",
+    "evidenceChecks": [
+      {
+        "id": "required-evidence-check",
+        "command": "npm run verify",
+        "method": "validation",
+        "summary": "Default repository evidenceCheck."
+      }
+    ],
+    "requiredEvidenceCheckIds": [
+      "required-evidence-check"
+    ],
+    "reportTransport": "local-json",
+    "defaultEvidenceCheckIds": [
+      "required-evidence-check"
+    ],
+    "uncoveredPathPolicy": "warn"
+  },
+  "activation": {
+    "aiInstructionFiles": []
+  }
+}

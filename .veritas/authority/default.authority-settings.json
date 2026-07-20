@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "id": "forage-default",
+  "name": "forage Default",
+  "description": "Conservative starter settings: observe first, learn from evidence, and only require what has earned trust.",
+  "defaults": {
+    "mode": "observe",
+    "new_rule_enforcement_level": "Observe"
+  },
+  "review_preferences": {
+    "human_signoff_required_for_stage_promotion": true,
+    "reviewer_confidence_scale": [
+      "low",
+      "medium",
+      "high"
+    ],
+    "major_rewrite_definition": "A major rewrite replaces the main structure or requirement flow instead of making local edits.",
+    "attestation_approval_ref_policy": {
+      "mode": "reference-only",
+      "allowed_prefixes": []
+    }
+  },
+  "promotion_preferences": {
+    "evidence_checks_required_before_require": [
+      "npm run verify"
+    ],
+    "warnings_block_in_ci": false,
+    "require_consistent_feedback_before_promotion": true
+  }
+}
