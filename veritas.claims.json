@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "producer": "veritas",
+  "claims": [
+    {
+      "id": "forage.surface.governance.guidance",
+      "facet": "veritas.affected-surface",
+      "claimType": "veritas-affected-surface",
+      "fieldOrBehavior": "governance.guidance",
+      "subjectType": "repo-surface",
+      "subjectId": "forage:governance.guidance",
+      "impactLevel": "medium",
+      "verificationPolicyId": "veritas.surface",
+      "metadata": {
+        "nodeId": "governance.guidance"
+      },
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    },
+    {
+      "id": "forage.surface.governance.root-manifests",
+      "facet": "veritas.affected-surface",
+      "claimType": "veritas-affected-surface",
+      "fieldOrBehavior": "governance.root-manifests",
+      "subjectType": "repo-surface",
+      "subjectId": "forage:governance.root-manifests",
+      "impactLevel": "medium",
+      "verificationPolicyId": "veritas.surface",
+      "metadata": {
+        "nodeId": "governance.root-manifests"
+      },
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    },
+    {
+      "id": "forage.surface.delivery.workflows",
+      "facet": "veritas.affected-surface",
+      "claimType": "veritas-affected-surface",
+      "fieldOrBehavior": "delivery.workflows",
+      "subjectType": "repo-surface",
+      "subjectId": "forage:delivery.workflows",
+      "impactLevel": "medium",
+      "verificationPolicyId": "veritas.surface",
+      "metadata": {
+        "nodeId": "delivery.workflows"
+      },
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    },
+    {
+      "id": "forage.surface.tooling.scripts",
+      "facet": "veritas.affected-surface",
+      "claimType": "veritas-affected-surface",
+      "fieldOrBehavior": "tooling.scripts",
+      "subjectType": "repo-surface",
+      "subjectId": "forage:tooling.scripts",
+      "impactLevel": "medium",
+      "verificationPolicyId": "veritas.surface",
+      "metadata": {
+        "nodeId": "tooling.scripts"
+      },
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    },
+    {
+      "id": "forage.surface.app.src",
+      "facet": "veritas.affected-surface",
+      "claimType": "veritas-affected-surface",
+      "fieldOrBehavior": "app.src",
+      "subjectType": "repo-surface",
+      "subjectId": "forage:app.src",
+      "impactLevel": "medium",
+      "verificationPolicyId": "veritas.surface",
+      "metadata": {
+        "nodeId": "app.src"
+      },
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    },
+    {
+      "id": "forage.surface.verification.tests",
+      "facet": "veritas.affected-surface",
+      "claimType": "veritas-affected-surface",
+      "fieldOrBehavior": "verification.tests",
+      "subjectType": "repo-surface",
+      "subjectId": "forage:verification.tests",
+      "impactLevel": "medium",
+      "verificationPolicyId": "veritas.surface",
+      "metadata": {
+        "nodeId": "verification.tests"
+      },
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    },
+    {
+      "id": "forage.governance",
+      "facet": "veritas.governance",
+      "claimType": "veritas-governance-artifact",
+      "fieldOrBehavior": "governance artifact integrity",
+      "subjectType": "repository",
+      "subjectId": "forage",
+      "impactLevel": "high",
+      "verificationPolicyId": "veritas.governance-artifact",
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    },
+    {
+      "id": "forage.evidence-check.npm-run-verify",
+      "facet": "veritas.evidence-check",
+      "claimType": "software-evidence-check",
+      "fieldOrBehavior": "npm run verify",
+      "subjectType": "repository",
+      "subjectId": "forage",
+      "impactLevel": "high",
+      "verificationPolicyId": "veritas.evidence-check",
+      "metadata": {
+        "command": "npm run verify"
+      },
+      "createdAt": "2026-07-20T14:45:19.461Z",
+      "updatedAt": "2026-07-20T14:45:19.461Z"
+    }
+  ],
+  "policies": [
+    {
+      "id": "veritas.surface",
+      "claimType": "veritas-affected-surface",
+      "requiredEvidence": [
+        "policy_rule"
+      ],
+      "requiredMethods": [
+        "auditability"
+      ],
+      "requiresCorroboration": false,
+      "acceptanceCriteria": [
+        "veritas evidence artifact"
+      ],
+      "reviewAuthority": "veritas",
+      "validityRule": {
+        "kind": "commit"
+      },
+      "stalenessTriggers": [
+        "source_ref changes",
+        "affected node changes"
+      ],
+      "conflictRules": [
+        "newer evidence for the same node supersedes older evidence"
+      ],
+      "impactLevel": "medium"
+    },
+    {
+      "id": "veritas.governance-artifact",
+      "claimType": "veritas-governance-artifact",
+      "requiredEvidence": [
+        "attestation",
+        "policy_rule"
+      ],
+      "requiredMethods": [
+        "auditability",
+        "attestation"
+      ],
+      "requiresCorroboration": false,
+      "acceptanceCriteria": [
+        "Protected Standards hash inspection",
+        "authority attestation status"
+      ],
+      "reviewAuthority": "veritas plus authority attestation",
+      "validityRule": {
+        "kind": "manual"
+      },
+      "stalenessTriggers": [
+        "Repo Standards hash changes",
+        "Repo Map hash changes",
+        "authority settings hash changes",
+        "attestation expiry"
+      ],
+      "conflictRules": [
+        "hash drift disputes Protected Standards currency"
+      ],
+      "impactLevel": "high"
+    },
+    {
+      "id": "veritas.evidence-check",
+      "claimType": "software-evidence-check",
+      "requiredEvidence": [
+        "test_output"
+      ],
+      "requiredMethods": [
+        "validation"
+      ],
+      "requiresCorroboration": false,
+      "acceptanceCriteria": [
+        "selected evidenceCheck command"
+      ],
+      "reviewAuthority": "veritas",
+      "validityRule": {
+        "kind": "commit"
+      },
+      "stalenessTriggers": [
+        "source_ref changes",
+        "evidenceCheck command changes",
+        "baseline evidenceCheck fails"
+      ],
+      "conflictRules": [
+        "failed evidenceCheck rejects a previously verified evidenceCheck claim"
+      ],
+      "impactLevel": "high"
+    }
+  ]
+}
