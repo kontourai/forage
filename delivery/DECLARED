@@ -16,5 +16,11 @@
     "reason": "Dependabot dependency-bump PR; no agent delivery involved, nothing to reconcile. Compound scope binds the platform-set actor identity to the bot's branch namespace per ADR 0022's fork-PR guidance, paired per the 2026-07-03 addendum since branch-prefix alone resolves against a pusher-controlled ref. Added because the dependency watch landed portfolio-wide before any repo except one had this exemption, so the watch's first harvest failed Trust Verify everywhere at once \u2014 the gate was right to refuse, and this is the documented route rather than a weakening. Known and accepted cost: if the bot identity rotates this stops matching and dependency PRs break loudly, which the current pinned action reports by naming the failed condition (flow-agents#1015).",
     "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
     "declared_at": "2026-07-27T20:00:00Z"
+  },
+  {
+    "scope": "author:briananderson1222 branch-prefix:chore/dependabot-exemption",
+    "reason": "The governance-file change adding the dependabot exemption above. Touches delivery/DECLARED only; no source or behaviour changes and no command-backed agent-delivery claims to reconcile. Scope is paired with author: per the ADR 0022 2026-07-03 addendum.",
+    "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
+    "declared_at": "2026-07-27T20:30:00Z"
   }
 ]
