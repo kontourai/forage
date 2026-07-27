@@ -110,6 +110,40 @@ describe("fetchSource() — Snapshot.notModified transient marker (forage#4)", (
     assert.equal(second.calls[0]?.headers["If-None-Match"], '"v1"');
   });
 
+  it("revalidate: false withholds validators so a body is always returned", async () => {
+    // A conditional request can answer 304 with no body, which satisfies the
+    // fetch and leaves a render — or anything else needing the bytes — nothing
+    // to work with. A caller that must have a body opts out of revalidation.
+    const store = createInMemorySnapshotStore();
+    const first = fakeFetch({
+      "https://example.test/page": { status: 200, headers: { etag: '"v1"' }, body: "hello" },
+    });
+    const captured = await fetchSource(cfg(), fastOpts({ fetch: first, store }));
+    await store.put(captured.snapshot!);
+
+    const second = fakeFetch({
+      "https://example.test/page": { status: 200, headers: { etag: '"v2"' }, body: "world" },
+    });
+    const result = await fetchSource({ ...cfg(), revalidate: false }, fastOpts({ fetch: second, store }));
+
+    assert.equal(second.calls[0]?.headers["If-None-Match"], undefined, "no validator may be sent");
+    assert.equal(second.calls[0]?.headers["If-Modified-Since"], undefined, "no validator may be sent");
+    assert.equal(result.snapshot?.notModified, undefined);
+    assert.equal(result.snapshot?.body, "world", "an unconditional request returns the body");
+  });
+
+  it("revalidates by default, so omitting the field keeps existing behaviour", async () => {
+    const store = createInMemorySnapshotStore();
+    const first = fakeFetch({
+      "https://example.test/page": { status: 200, headers: { etag: '"v1"' }, body: "hello" },
+    });
+    await store.put((await fetchSource(cfg(), fastOpts({ fetch: first, store }))).snapshot!);
+
+    const second = fakeFetch({ "https://example.test/page": { status: 304 } });
+    await fetchSource(cfg(), fastOpts({ fetch: second, store }));
+    assert.equal(second.calls[0]?.headers["If-None-Match"], '"v1"', "default must stay conditional");
+  });
+
   it("rejects an unsolicited 304 (no prior snapshot at all) as a typed http-error (false-304 hardening)", async () => {
     const store = createInMemorySnapshotStore(); // empty
     const fetch = fakeFetch({ "https://example.test/page": { status: 304 } });

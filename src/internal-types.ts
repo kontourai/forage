@@ -35,6 +35,17 @@ export interface SourceConfig {
   respectRobots?: boolean;
   /** Render after plain fetch, always or only when the response is a JS shell. */
   render?: boolean | "on-shell";
+  /**
+   * Send conditional request headers when a matching prior snapshot is stored.
+   * Defaults to `true`.
+   *
+   * Set `false` when a body is required regardless of freshness. A conditional
+   * request can answer `304 Not Modified` with no body, which satisfies the
+   * fetch but leaves a render — or anything else that needs the bytes —
+   * nothing to work with. Rendering and revalidation are not coupled
+   * automatically: a caller that wants both is entitled to ask for both.
+   */
+  revalidate?: boolean;
   egress: EgressPolicy;
 }
 

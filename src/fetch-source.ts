@@ -482,7 +482,8 @@ export async function fetchSource(
       let headers =
         hop === 0 ? { ...baseHeaders } : withoutConditionalHeaders(baseHeaders);
       const matchesPrior =
-        prior !== undefined && sameResource(currentUrl.href, prior.url);
+        config.revalidate !== false
+        && prior !== undefined && sameResource(currentUrl.href, prior.url);
       let sentPriorValidator = false;
       if (prior && matchesPrior) {
         headers = withoutConditionalHeaders(headers);
