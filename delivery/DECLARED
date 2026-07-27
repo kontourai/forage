@@ -22,5 +22,17 @@
     "reason": "The governance-file change adding the dependabot exemption above. Touches delivery/DECLARED only; no source or behaviour changes and no command-backed agent-delivery claims to reconcile. Scope is paired with author: per the ADR 0022 2026-07-03 addendum.",
     "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
     "declared_at": "2026-07-27T20:30:00Z"
+  },
+  {
+    "scope": "author:kontourai-releases[bot] branch-prefix:release-please--",
+    "reason": "release-please automation PR; no agent delivery involved, nothing to reconcile. Actor verified against live release PRs (opened by the kontourai-releases GitHub App) rather than assumed. Paired with author: per the ADR 0022 2026-07-03 addendum \u2014 branch-prefix alone resolves against a pusher-controlled ref. Known and accepted cost: a rotated bot identity stops matching and the release train breaks LOUDLY \u2014 the pinned action names the failed condition (flow-agents#1015); thirteen silent days was the bug, a loud break is the correct outcome (flow-agents#1011). Provisioned portfolio-wide after a live release PR failed on exactly this gap \u2014 the fourth worked example for flow-agents#1017.",
+    "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
+    "declared_at": "2026-07-27T22:00:00Z"
+  },
+  {
+    "scope": "author:briananderson1222 branch-prefix:chore/release-exemption",
+    "reason": "The governance-file change adding the release-automation entry above. Touches delivery/DECLARED only. Scope paired with author: per the ADR 0022 2026-07-03 addendum.",
+    "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
+    "declared_at": "2026-07-27T22:00:00Z"
   }
 ]
