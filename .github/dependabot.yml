@@ -1,0 +1,28 @@
+# Nothing was watching dependencies across these repositories, and it showed:
+# consuming applications drifted a full major behind, and nine repositories sat
+# on a stale pinned action SHA — each gap found by hand while chasing something
+# else. Two ecosystems because both failure modes happened:
+#   - npm: sibling packages are often pinned exactly, so a stale pin here is a
+#     silent downstream block, not a local nicety.
+#   - github-actions: reusable actions are pinned by digest and never float; an
+#     upstream improvement reaches nobody until the pin moves.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      kontourai:
+        patterns:
+          - "@kontourai/*"
+      dev-dependencies:
+        dependency-type: development
+        exclude-patterns:
+          - "@kontourai/*"
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
