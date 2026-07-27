@@ -40,6 +40,6 @@ jobs:
       - run: npm ci
       # The external anchor: re-run our real verify fresh + reconcile any delivered bundle.
       # SHA-pinned (mutable tags are not trusted for a cross-repo action that gates merges).
-      - uses: kontourai/flow-agents/.github/actions/trust-verify@f2efb33ef683793bbec01dcf7e909f3e1423c04d # flow-agents @ locked action runtime dependencies
+      - uses: kontourai/flow-agents/.github/actions/trust-verify@e5f348b49f8130f9d452e73b104ba328f9916981 # flow-agents @ reports which DECLARED condition failed (#1015)
         with:
           verify-command: "npm run verify"
