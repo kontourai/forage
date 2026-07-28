@@ -36,7 +36,9 @@
     "test": "npm run build && node --test dist/tests/*.test.js",
     "test:release-tag-ancestry": "scripts/check-release-tag-ancestry.sh --self-test",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm test && npm run test:release-tag-ancestry"
+    "verify": "npm run typecheck && npm test && npm run test:release-tag-ancestry",
+    "workflow:sidecar": "flow-agents-workflow-sidecar",
+    "workflow:validate-artifacts": "flow-agents-validate-artifacts"
   },
   "license": "Apache-2.0",
   "publishConfig": {
@@ -51,6 +53,7 @@
     }
   },
   "devDependencies": {
+    "@kontourai/flow-agents": "5.5.0",
     "@types/node": "^26.1.1",
     "typescript": ">=5.0.0"
   }
