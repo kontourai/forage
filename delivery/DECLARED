@@ -1,7 +1,7 @@
 [
   {
     "scope": "author:briananderson1222 branch-prefix:feat/revalidate-control",
-    "reason": "Adds an optional revalidate field to SourceConfig so a caller can withhold HTTP validators (forage#33). A conditional request can answer 304 with no body, which leaves a render nothing to render; the field defaults to true so existing behaviour is unchanged. Agent-delivered outside builder.build, so no trust bundle exists; Step 1 fresh verify passes. Verification in lieu of a bundle: npm run verify green on Node 22 and 24 in this PR's CI, and the new guard is fault-injected \u2014 removing the config.revalidate !== false check turns the withholding test red while the default test stays green, and src/fetch-source.ts restores byte-identically (sha256 6d9cf1da...). Scope is paired with author: per the ADR 0022 2026-07-03 addendum, since branch-prefix alone resolves against a pusher-controlled ref.",
+    "reason": "Adds an optional revalidate field to SourceConfig so a caller can withhold HTTP validators (forage#33). A conditional request can answer 304 with no body, which leaves a render nothing to render; the field defaults to true so existing behaviour is unchanged. Agent-delivered outside builder.build, so no trust bundle exists; Step 1 fresh verify passes. Verification in lieu of a bundle: npm run verify green on Node 22 and 24 in this PR's CI, and the new guard is fault-injected — removing the config.revalidate !== false check turns the withholding test red while the default test stays green, and src/fetch-source.ts restores byte-identically (sha256 6d9cf1da...). Scope is paired with author: per the ADR 0022 2026-07-03 addendum, since branch-prefix alone resolves against a pusher-controlled ref.",
     "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
     "declared_at": "2026-07-27T15:20:00Z"
   },
@@ -13,7 +13,7 @@
   },
   {
     "scope": "author:dependabot[bot] branch-prefix:dependabot/",
-    "reason": "Dependabot dependency-bump PR; no agent delivery involved, nothing to reconcile. Compound scope binds the platform-set actor identity to the bot's branch namespace per ADR 0022's fork-PR guidance, paired per the 2026-07-03 addendum since branch-prefix alone resolves against a pusher-controlled ref. Added because the dependency watch landed portfolio-wide before any repo except one had this exemption, so the watch's first harvest failed Trust Verify everywhere at once \u2014 the gate was right to refuse, and this is the documented route rather than a weakening. Known and accepted cost: if the bot identity rotates this stops matching and dependency PRs break loudly, which the current pinned action reports by naming the failed condition (flow-agents#1015).",
+    "reason": "Dependabot dependency-bump PR; no agent delivery involved, nothing to reconcile. Compound scope binds the platform-set actor identity to the bot's branch namespace per ADR 0022's fork-PR guidance, paired per the 2026-07-03 addendum since branch-prefix alone resolves against a pusher-controlled ref. Added because the dependency watch landed portfolio-wide before any repo except one had this exemption, so the watch's first harvest failed Trust Verify everywhere at once — the gate was right to refuse, and this is the documented route rather than a weakening. Known and accepted cost: if the bot identity rotates this stops matching and dependency PRs break loudly, which the current pinned action reports by naming the failed condition (flow-agents#1015).",
     "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
     "declared_at": "2026-07-27T20:00:00Z"
   },
@@ -25,7 +25,7 @@
   },
   {
     "scope": "author:kontourai-releases[bot] branch-prefix:release-please--",
-    "reason": "release-please automation PR; no agent delivery involved, nothing to reconcile. Actor verified against live release PRs (opened by the kontourai-releases GitHub App) rather than assumed. Paired with author: per the ADR 0022 2026-07-03 addendum \u2014 branch-prefix alone resolves against a pusher-controlled ref. Known and accepted cost: a rotated bot identity stops matching and the release train breaks LOUDLY \u2014 the pinned action names the failed condition (flow-agents#1015); thirteen silent days was the bug, a loud break is the correct outcome (flow-agents#1011). Provisioned portfolio-wide after a live release PR failed on exactly this gap \u2014 the fourth worked example for flow-agents#1017.",
+    "reason": "release-please automation PR; no agent delivery involved, nothing to reconcile. Actor verified against live release PRs (opened by the kontourai-releases GitHub App) rather than assumed. Paired with author: per the ADR 0022 2026-07-03 addendum — branch-prefix alone resolves against a pusher-controlled ref. Known and accepted cost: a rotated bot identity stops matching and the release train breaks LOUDLY — the pinned action names the failed condition (flow-agents#1015); thirteen silent days was the bug, a loud break is the correct outcome (flow-agents#1011). Provisioned portfolio-wide after a live release PR failed on exactly this gap — the fourth worked example for flow-agents#1017.",
     "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
     "declared_at": "2026-07-27T22:00:00Z"
   },
@@ -34,5 +34,11 @@
     "reason": "The governance-file change adding the release-automation entry above. Touches delivery/DECLARED only. Scope paired with author: per the ADR 0022 2026-07-03 addendum.",
     "approved_by": "brian.anderson1222 (delegated approval, 2026-07-27 session: scoped-DECLARED-exemption route)",
     "declared_at": "2026-07-27T22:00:00Z"
+  },
+  {
+    "scope": "author:briananderson1222 branch-prefix:chore/flow-agents-local-kit",
+    "reason": "Pins @kontourai/flow-agents 5.5.0 as an exact local devDependency and adds the workflow:sidecar / workflow:validate-artifacts scripts, matching the one proven configuration (the marketing-site repo). With bundle-required now enforced portfolio-wide, this repo demanded delivery bundles while providing no declared means to author them: bundle authoring worked only on machines with a coincidental global kit install, and sandboxed delegates without network access could not produce bundles at all. Dev-tooling-only change: no source, no behaviour, no shipped-dependency change, nothing for a bundle to reconcile. Verification in lieu of a bundle: this PR's own CI runs the full verify matrix, and the kit's bins resolve from the local install. Scope is paired with author: per the ADR 0022 2026-07-03 addendum, since branch-prefix alone resolves against a pusher-controlled ref.",
+    "approved_by": "brian.anderson1222 (delegated approval, 2026-07-28 session: owner accepted rollout recommendation)",
+    "declared_at": "2026-07-28T21:00:00Z"
   }
 ]
