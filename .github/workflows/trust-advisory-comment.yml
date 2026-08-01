@@ -1,0 +1,24 @@
+name: Trust advisory PR comment
+
+on:
+  workflow_run:
+    workflows: ["Trust Verify"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request'
+    concurrency:
+      group: trust-advisory-comment-${{ github.event.workflow_run.workflow_id }}-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: kontourai/flow-agents/.github/actions/trust-advisory-comment@ce9223697f16002bf345be93ccbe2e2183e028d9
+        with:
+          github-token: ${{ github.token }}
+          workflow-run-id: ${{ github.event.workflow_run.id }}
