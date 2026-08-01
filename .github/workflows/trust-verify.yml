@@ -43,3 +43,16 @@ jobs:
       - uses: kontourai/flow-agents/.github/actions/trust-verify@e5f348b49f8130f9d452e73b104ba328f9916981 # flow-agents @ reports which DECLARED condition failed (#1015)
         with:
           verify-command: "npm run verify"
+  trust-advisory-comment:
+    if: >-
+      ${{ always() && github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository }}
+    needs: trust-verify
+    permissions:
+      pull-requests: write
+    uses: kontourai/.github/.github/workflows/trust-advisory-comment.yml@66f62973ae2f01adf9abbcc2baff62f0a57d96a0
+    with:
+      check-name: Trust Verify
+      pr-number: ${{ github.event.pull_request.number }}
+      result: ${{ needs['trust-verify'].result }}
+      run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
