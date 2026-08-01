@@ -9,46 +9,4 @@ permissions:
 
 jobs:
   readiness:
-    name: Advisory readiness
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - name: Install repository dependencies
-        if: ${{ hashFiles('package-lock.json') != '' }}
-        run: npm ci
-      - name: Produce advisory Veritas readiness
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          if [ -z "$BASE_SHA" ]; then
-            BASE_SHA="$(git rev-parse HEAD^)"
-          fi
-          set +e
-          npm exec --yes --package=@kontourai/veritas@1.5.2 -- veritas readiness \
-            --check evidence \
-            --run-id "github-${{ github.run_id }}" \
-            --source-ref "${{ github.event_name }}:${{ github.ref }}" \
-            --changed-from "$BASE_SHA" \
-            --changed-to "$HEAD_SHA"
-          status=$?
-          set -e
-          echo "Veritas advisory readiness exit: $status" >> "$GITHUB_STEP_SUMMARY"
-          echo "This rollout is observe-only; promotion to blocking enforcement requires a separate approval." >> "$GITHUB_STEP_SUMMARY"
-          report=".kontourai/veritas/evidence/github-${{ github.run_id }}.json"
-          if [ ! -s "$report" ]; then
-            echo "Veritas did not produce the required evidence artifact: $report" >&2
-            exit 1
-          fi
-      - name: Upload Veritas evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: veritas-readiness-${{ github.run_id }}
-          path: .kontourai/veritas/evidence/
-          if-no-files-found: warn
+    uses: kontourai/.github/.github/workflows/veritas-advisory.yml@main
