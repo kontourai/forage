@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/kontourai/forage/compare/v0.5.0...v0.5.1) (2026-08-02)
+
+
+### Fixes
+
+* fail the test suite when zero test files are discovered ([#52](https://github.com/kontourai/forage/issues/52)) ([bfa4513](https://github.com/kontourai/forage/commit/bfa4513e7ae4611e02106dbbfc01d57d75a43c89)), closes [#49](https://github.com/kontourai/forage/issues/49)
+
 ## [0.5.0](https://github.com/kontourai/forage/compare/v0.4.1...v0.5.0) (2026-07-27)
 
 
