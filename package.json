@@ -33,7 +33,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc",
     "prepare": "npm run build",
-    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test": "npm run build && node scripts/run-tests.mjs",
     "test:release-tag-ancestry": "scripts/check-release-tag-ancestry.sh --self-test",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm test && npm run test:release-tag-ancestry",
