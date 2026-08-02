@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "id": "builder",
+  "name": "Builder Kit",
+  "product_name": "Builder Kit",
+  "description": "Repo-local Builder Kit routing declaration. The Flow Definitions ship in the installed @kontourai/flow-agents package and resolve through its packaged-flow fallback; this manifest exists so the workflow-steering hook routes implementation prompts in this repository into builder.build.",
+  "workflow_triggers": [
+    {
+      "id": "builder-build-work",
+      "when": "implementation-work-detected",
+      "target_flow_id": "builder.build",
+      "default_skill": "deliver",
+      "conditional_skills": [{ "when": "user-requested-tdd", "skill": "tdd-workflow" }],
+      "required_sequence": ["ensure-session", "plan-work", "execute-plan", "review-work", "verify-work"],
+      "post_verify_targets": ["release-readiness", "learning-review"]
+    }
+  ]
+}

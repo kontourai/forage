@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "kits": [
+    {
+      "id": "builder",
+      "name": "Builder Kit",
+      "path": "kits/builder",
+      "description": "Delivery routing for this repository: substantive changes ship through builder.build."
+    }
+  ]
+}
