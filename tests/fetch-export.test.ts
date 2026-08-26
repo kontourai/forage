@@ -5,25 +5,29 @@
 // modules, mirroring tests/egress-export.test.ts.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
   fetchSource,
   buildSnapshotSourceRef,
+  isSnapshotStoreReadError,
   parseSnapshotSourceRef,
   resolveSnapshotSourceRef,
+  SnapshotStoreReadError,
   type FetchLike,
   type SourceConfig,
 } from "../src/fetch-index.js";
 import {
   createFilesystemSnapshotStore,
   createInMemorySnapshotStore,
+  SnapshotStoreReadError as RootSnapshotStoreReadError,
   type ExactSnapshotStore,
   type Snapshot,
   type SnapshotStore,
 } from "../src/index.js";
+import { replaySource } from "../src/snapshot-store.js";
 
 const egress = { guarded: false } as const;
 
@@ -52,10 +56,22 @@ async function recordPath(root: string, snapshot: Snapshot): Promise<{
   return { filesystem, record: path.join(sourceRoot, record) };
 }
 
-async function assertStoreError(store: SnapshotStore, snapshot = replaySnapshot()): Promise<void> {
+async function assertStoreError(
+  store: SnapshotStore,
+  snapshot = replaySnapshot(),
+  expectedKind: "snapshot-corrupt" | "snapshot-store-error" = "snapshot-store-error",
+): Promise<void> {
   const result = await resolveSnapshotSourceRef(store, buildSnapshotSourceRef(snapshot));
   assert.equal(result.ok, false);
-  if (!result.ok) assert.equal(result.error.kind, "snapshot-store-error");
+  if (!result.ok) assert.equal(result.error.kind, expectedKind);
+}
+
+async function assertIntegrityFailure(operation: () => Promise<unknown>): Promise<void> {
+  await assert.rejects(operation, (error: unknown) =>
+    error instanceof SnapshotStoreReadError &&
+    isSnapshotStoreReadError(error) &&
+    error.code === "snapshot-corrupt",
+  );
 }
 
 describe("@kontourai/forage/fetch public surface", () => {
@@ -64,6 +80,9 @@ describe("@kontourai/forage/fetch public surface", () => {
     assert.equal(typeof buildSnapshotSourceRef, "function");
     assert.equal(typeof parseSnapshotSourceRef, "function");
     assert.equal(typeof resolveSnapshotSourceRef, "function");
+    assert.equal(typeof SnapshotStoreReadError, "function");
+    assert.equal(typeof isSnapshotStoreReadError, "function");
+    assert.equal(RootSnapshotStoreReadError, SnapshotStoreReadError);
   });
 
   it("fetchSource from the subpath captures a snapshot with a resolvable sourceRef", async () => {
@@ -328,6 +347,21 @@ describe("@kontourai/forage/fetch public surface", () => {
       assert.equal(result.ok, false);
       if (!result.ok) assert.equal(result.error.kind, "invalid-reference");
     }
+  });
+
+  it("rejects malformed references before it calls a store", async () => {
+    let calls = 0;
+    const store: ExactSnapshotStore = {
+      put: async () => { calls += 1; },
+      latest: async () => { calls += 1; return undefined; },
+      get: async () => { calls += 1; return undefined; },
+      list: async () => { calls += 1; return []; },
+      findExact: async () => { calls += 1; return { kind: "missing" }; },
+    };
+    const result = await resolveSnapshotSourceRef(store, "forage-snapshot:not-a-valid-reference");
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.kind, "invalid-reference");
+    assert.equal(calls, 0);
   });
 
   it("resolves an older reference after a same-body recapture", async () => {
@@ -618,7 +652,7 @@ describe("@kontourai/forage/fetch public surface", () => {
       const { filesystem, record } = await recordPath(unreadableRoot, snapshot);
       await rm(record);
       await mkdir(record);
-      await assertStoreError(filesystem, snapshot);
+      await assertStoreError(filesystem, snapshot, "snapshot-corrupt");
     } finally {
       await rm(unreadableRoot, { recursive: true, force: true });
     }
@@ -643,30 +677,137 @@ describe("@kontourai/forage/fetch public surface", () => {
       const { filesystem, record } = await recordPath(malformedRoot, snapshot);
       await rm(record);
       await writeFile(record, "{", "utf8");
-      await assertStoreError(filesystem, snapshot);
+      await assertStoreError(filesystem, snapshot, "snapshot-corrupt");
     } finally {
       await rm(malformedRoot, { recursive: true, force: true });
     }
   });
 
-  it("bounds history reads and isolates foreign filesystem entries", async () => {
+  it("fails closed when an owned source collection contains a foreign-source record", async () => {
     const snapshot = replaySnapshot();
-    const root = await mkdtemp(path.join(tmpdir(), "forage-history-bounds-"));
+    const root = await mkdtemp(path.join(tmpdir(), "forage-foreign-source-"));
     try {
       const { filesystem, record } = await recordPath(root, snapshot);
       const sourceRoot = path.dirname(record);
-      await mkdir(path.join(sourceRoot, "foreign.json"));
-      await writeFile(path.join(sourceRoot, "malformed.json"), "{", "utf8");
-      await writeFile(path.join(sourceRoot, "oversized.json"), "", "utf8");
-      await truncate(path.join(sourceRoot, "oversized.json"), 96 * 1024 * 1024 + 1);
       await writeFile(path.join(sourceRoot, "wrong-source.json"), JSON.stringify({
         ...snapshot,
         sourceId: "different-source",
       }), "utf8");
+      await assertIntegrityFailure(() => filesystem.list(snapshot.sourceId));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 
-      assert.deepEqual(await filesystem.list(snapshot.sourceId), [snapshot]);
-      assert.deepEqual(await filesystem.latest(snapshot.sourceId), snapshot);
-      assert.deepEqual(await filesystem.get(snapshot.sourceId, snapshot.bodyHash), snapshot);
+  it("fails closed with a typed integrity failure when an owned on-disk envelope is tampered", async () => {
+    const corrupted = replaySnapshot();
+    const validBody = "model: valid sibling";
+    const validSibling: Snapshot = {
+      ...corrupted,
+      fetchedAt: "2026-07-18T12:01:00.000Z",
+      body: validBody,
+      bodyHash: createHash("sha256").update(validBody).digest("hex"),
+    };
+    for (const mutate of [
+      (record: Record<string, unknown>) => { record.body = "model: tampered on disk"; },
+      (record: Record<string, unknown>) => { record.bodyHash = "f".repeat(64); },
+      (record: Record<string, unknown>) => { record.status = 503; },
+      (record: Record<string, unknown>) => { record.headers = { etag: '"tampered"' }; },
+      (record: Record<string, unknown>) => { record.redirects = ["https://example.test/tampered"]; },
+      (record: Record<string, unknown>) => { record.rendered = true; },
+    ]) {
+      const root = await mkdtemp(path.join(tmpdir(), "forage-integrity-failure-"));
+      try {
+        const { filesystem, record } = await recordPath(root, corrupted);
+        await filesystem.put(validSibling);
+        const tampered = JSON.parse(await readFile(record, "utf8")) as Record<string, unknown>;
+        mutate(tampered);
+        await writeFile(record, JSON.stringify(tampered), "utf8");
+
+        // Every history read fails rather than silently dropping the corrupt
+        // owned record and fabricating a valid-only or empty baseline.
+        await assertIntegrityFailure(() => filesystem.list(corrupted.sourceId));
+        await assertIntegrityFailure(() => filesystem.latest(corrupted.sourceId));
+        await assertIntegrityFailure(() => filesystem.get(corrupted.sourceId, validSibling.bodyHash));
+        await assertIntegrityFailure(() => filesystem.findExact(parseSnapshotSourceRef(buildSnapshotSourceRef(corrupted))!));
+
+        const resolution = await resolveSnapshotSourceRef(filesystem, buildSnapshotSourceRef(corrupted));
+        assert.equal(resolution.ok, false);
+        if (!resolution.ok) {
+          assert.equal(resolution.error.kind, "snapshot-corrupt");
+          assert.doesNotMatch(resolution.error.message, /forage-integrity-failure|\.json/);
+        }
+
+        // Replay is an operational result: it keeps the typed integrity class
+        // without exposing an on-disk path to an untrusted caller.
+        const replay = await replaySource(filesystem, corrupted.sourceId);
+        assert.equal(replay.error?.kind, "snapshot-corrupt");
+        assert.doesNotMatch(replay.error?.message ?? "", /forage-integrity-failure|\.json/);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("fails exact lookup if an indexed record disappears after its index is read", async () => {
+    const snapshot = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-indexed-record-disappears-"));
+    try {
+      const { filesystem, record } = await recordPath(root, snapshot);
+      const sourceRef = `forage-snapshot:${encodeURIComponent(snapshot.sourceId)}?${new URLSearchParams({
+        url: snapshot.url,
+        sha256: snapshot.bodyHash,
+        fetchedAt: snapshot.fetchedAt,
+      })}`;
+      const reference = parseSnapshotSourceRef(sourceRef)!;
+      await rm(record);
+      await assert.rejects(
+        () => filesystem.findExact(reference),
+        (error: unknown) => error instanceof SnapshotStoreReadError && error.code === "snapshot-store-error",
+      );
+      const resolution = await resolveSnapshotSourceRef(filesystem, sourceRef);
+      assert.equal(resolution.ok, false);
+      if (!resolution.ok) assert.equal(resolution.error.kind, "snapshot-store-error");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("replays a valid long-identity legacy filesystem record", async () => {
+    const sourceId = "s".repeat(1025);
+    const body = "legacy body";
+    const snapshot: Snapshot = {
+      sourceId,
+      url: "https://example.test/legacy-long.json",
+      status: 200,
+      fetchedAt: "legacy-capture",
+      body,
+      bodyHash: createHash("sha256").update(body).digest("hex"),
+    };
+    const root = await mkdtemp(path.join(tmpdir(), "forage-legacy-long-identity-"));
+    try {
+      const sourceDirectory = `${sourceId.slice(0, 80)}-${createHash("sha256").update(sourceId).digest("hex").slice(0, 8)}`;
+      const directory = path.join(root, sourceDirectory);
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        path.join(directory, `${snapshot.fetchedAt}-${snapshot.bodyHash.slice(0, 12)}.json`),
+        JSON.stringify(snapshot),
+        "utf8",
+      );
+      const reference = `forage-snapshot:${encodeURIComponent(sourceId)}?${new URLSearchParams({
+        url: snapshot.url,
+        sha256: snapshot.bodyHash,
+        fetchedAt: snapshot.fetchedAt,
+      })}`;
+      const result = await resolveSnapshotSourceRef(
+        createFilesystemSnapshotStore({ root }),
+        reference,
+      );
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.integrity, "body-and-identity");
+        assert.equal(result.snapshot.sourceId, sourceId);
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

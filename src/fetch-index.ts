@@ -49,3 +49,11 @@ export type {
   SnapshotLookup,
   SnapshotStore,
 } from "./types.js";
+export {
+  SnapshotStoreReadError,
+  isSnapshotStoreReadError,
+} from "./snapshot-store-errors.js";
+export type {
+  SnapshotStoreReadErrorCode,
+  SnapshotStoreReadErrorReason,
+} from "./snapshot-store-errors.js";

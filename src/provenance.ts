@@ -5,6 +5,7 @@ import type {
   SnapshotLookup,
   SnapshotStore,
 } from "./types.js";
+import { isSnapshotStoreReadError } from "./snapshot-store-errors.js";
 
 const MAX_REFERENCE_LENGTH = 16 * 1024;
 const MAX_LEGACY_REFERENCE_LENGTH = 1024 * 1024;
@@ -17,8 +18,11 @@ function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function snapshotEnvelopeDigest(snapshot: Snapshot): string {
-  assertReferenceableSnapshot(snapshot);
+export function snapshotEnvelopeDigest(
+  snapshot: Snapshot,
+  releasedIdentity = false,
+): string {
+  assertReferenceableSnapshot(snapshot, releasedIdentity);
   const envelope = {
     sourceId: snapshot.sourceId,
     url: snapshot.url,
@@ -79,6 +83,7 @@ export type SnapshotSourceRefResolution =
           | "invalid-reference"
           | "snapshot-not-found"
           | "snapshot-mismatch"
+          | "snapshot-corrupt"
           | "snapshot-store-error";
         message: string;
       };
@@ -219,8 +224,11 @@ function assertReferenceableSnapshot(
 }
 
 /** Return only the validated fields that are committed by a durable reference. */
-export function canonicalDurableSnapshot(snapshot: Snapshot): Snapshot {
-  assertReferenceableSnapshot(snapshot);
+export function canonicalDurableSnapshot(
+  snapshot: Snapshot,
+  releasedIdentity = false,
+): Snapshot {
+  assertReferenceableSnapshot(snapshot, releasedIdentity);
   return cloneDurableSnapshot(snapshot);
 }
 
@@ -332,12 +340,14 @@ export async function resolveSnapshotSourceRef(
       throw new TypeError("snapshot store does not implement exact lookup");
     }
     return resolveCandidate(await store.findExact(reference), reference);
-  } catch {
+  } catch (error) {
     return {
       ok: false,
       error: {
-        kind: "snapshot-store-error",
-        message: "the supplied snapshot store could not resolve the reference",
+        kind: isSnapshotStoreReadError(error) ? error.code : "snapshot-store-error",
+        message: isSnapshotStoreReadError(error) && error.code === "snapshot-corrupt"
+          ? "the supplied snapshot store contains a corrupt snapshot"
+          : "the supplied snapshot store could not resolve the reference",
       },
     };
   }
