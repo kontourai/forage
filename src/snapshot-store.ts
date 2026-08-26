@@ -466,6 +466,8 @@ interface HeadFingerprint {
 /** @internal Test-only read spy; deliberately not re-exported by any package surface. */
 export const testOnlyHeadWitnessIo = {
   onVerifiedRecordRead: undefined as undefined | (() => void),
+  afterVerifiedRecordRead: undefined as undefined | (() => void | Promise<void>),
+  beforeFinalMetadataFence: undefined as undefined | (() => void | Promise<void>),
 };
 
 function headFailureFrom(error: unknown): HeadOutcome {
@@ -718,6 +720,7 @@ async function fingerprintFilesystemHead(
   for (const [, , text] of identity) {
     if (!recordSet.has(text.trim())) throw new HeadWitnessFailure("unavailable");
   }
+  await testOnlyHeadWitnessIo.beforeFinalMetadataFence?.();
   await assertFingerprintStillPresent(
     root,
     directory,
@@ -752,6 +755,7 @@ async function readAuthenticatedHead(
     const size = Number(metadata.size);
     const snapshot = await readSnapshotFile(path.join(root, sourceDirName(sourceId), name), true, false, size);
     testOnlyHeadWitnessIo.onVerifiedRecordRead?.();
+    await testOnlyHeadWitnessIo.afterVerifiedRecordRead?.();
     if (snapshot === undefined) throw new HeadWitnessFailure("unavailable");
     if (snapshot.sourceId !== sourceId) throw new HeadWitnessFailure("corrupt");
     assertSnapshotFileIdentity(name, snapshot);

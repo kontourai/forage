@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -104,6 +104,92 @@ test("same-size rewrites and restore ABA invalidate the physical witness", async
     // Restoring exact content cannot resurrect an old token: ctime/mtime and
     // the final metadata fence retain the intervening physical mutation.
     assert.deepEqual(await store.compareHeadWitness(witness), { kind: "changed" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("metadata and authenticated-body races are fenced, including same-size rewrites", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "forage-head-race-"));
+  try {
+    const { store, witness } = await captured(root);
+    const directory = await sourceDirectory(root);
+    const [record] = (await readdir(directory)).filter((entry) => entry.endsWith(".json"));
+    const recordPath = path.join(directory, record);
+    const contents = await readFile(recordPath, "utf8");
+    let ran = false;
+    testOnlyHeadWitnessIo.beforeFinalMetadataFence = async () => {
+      if (!ran) {
+        ran = true;
+        await writeFile(recordPath, contents, "utf8");
+      }
+    };
+    assert.deepEqual(await store.compareHeadWitness(witness), { kind: "unavailable" });
+    testOnlyHeadWitnessIo.beforeFinalMetadataFence = undefined;
+
+    // Recreate a valid baseline, then change it after body authentication but
+    // before the outer fence. The capture refuses rather than returning it.
+    const renewed = await store.readVerifiedHead(snapshot().sourceId);
+    assert.equal(renewed.kind, "found");
+    let bodyRace = false;
+    testOnlyHeadWitnessIo.afterVerifiedRecordRead = async () => {
+      if (!bodyRace) {
+        bodyRace = true;
+        await writeFile(recordPath, contents, "utf8");
+      }
+    };
+    assert.deepEqual(await store.readVerifiedHead(snapshot().sourceId), { kind: "unavailable" });
+  } finally {
+    testOnlyHeadWitnessIo.beforeFinalMetadataFence = undefined;
+    testOnlyHeadWitnessIo.afterVerifiedRecordRead = undefined;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("limits and unavailable physical namespaces refuse before record-body allocation", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "forage-head-body-limit-"));
+  try {
+    const store = createFilesystemSnapshotStore({ root });
+    await store.put(snapshot(0, "x".repeat(256 * 1024)));
+    let verifiedRecordReads = 0;
+    testOnlyHeadWitnessIo.onVerifiedRecordRead = () => { verifiedRecordReads += 1; };
+    assert.deepEqual(
+      await store.readVerifiedHead(snapshot().sourceId, { maxVerifiedBodyBytes: 32 }),
+      { kind: "unavailable" },
+    );
+    assert.equal(verifiedRecordReads, 0);
+    assert.deepEqual(
+      await store.readVerifiedHead(snapshot().sourceId, { maxIndexBytes: 0 }),
+      { kind: "unavailable" },
+    );
+    assert.equal(verifiedRecordReads, 0);
+
+    const directory = await sourceDirectory(root);
+    const identityDirectory = path.join(directory, "identity-index");
+    await chmod(identityDirectory, 0o000);
+    try {
+      assert.deepEqual(await store.readVerifiedHead(snapshot().sourceId), { kind: "unavailable" });
+    } finally {
+      await chmod(identityDirectory, 0o700);
+    }
+  } finally {
+    testOnlyHeadWitnessIo.onVerifiedRecordRead = undefined;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("comparison copies mutable witness input before asynchronous filesystem work", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "forage-head-mutable-input-"));
+  try {
+    const { store, witness } = await captured(root);
+    const mutable: SourceHeadWitness = {
+      ...witness,
+      headSnapshotRef: { ...witness.headSnapshotRef },
+    };
+    const comparison = store.compareHeadWitness(mutable);
+    mutable.token = "0".repeat(64);
+    mutable.headSnapshotRef.url = "https://example.test/mutated-after-call";
+    assert.deepEqual(await comparison, { kind: "matches" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
