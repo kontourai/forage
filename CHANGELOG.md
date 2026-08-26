@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/kontourai/forage/compare/v0.6.1...v0.7.0) (2026-08-26)
+
+
+### Features
+
+* expose bounded verified source-head witnesses ([#64](https://github.com/kontourai/forage/issues/64)) ([44af4eb](https://github.com/kontourai/forage/commit/44af4ebd422f7a429ee3c196576afd85784f71d8))
+
 ## [0.6.1](https://github.com/kontourai/forage/compare/v0.6.0...v0.6.1) (2026-08-26)
 
 
