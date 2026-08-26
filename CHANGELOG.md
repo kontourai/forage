@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/kontourai/forage/compare/v0.6.0...v0.6.1) (2026-08-26)
+
+
+### Fixes
+
+* **provenance:** isolate exact lookup reference ([#61](https://github.com/kontourai/forage/issues/61)) ([5f7a762](https://github.com/kontourai/forage/commit/5f7a7625c74af3ffc4d21df6cc549247d375876e))
+
 ## [0.6.0](https://github.com/kontourai/forage/compare/v0.5.1...v0.6.0) (2026-08-26)
 
 
