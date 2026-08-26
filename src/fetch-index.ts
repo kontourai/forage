@@ -45,6 +45,11 @@ export type {
 export type {
   ExactSnapshotLookupResult,
   ExactSnapshotStore,
+  VerifiedHeadSnapshotStore,
+  VerifiedHeadLimits,
+  SourceHeadWitness,
+  ReadVerifiedHeadResult,
+  HeadWitnessComparisonResult,
   Snapshot,
   SnapshotLookup,
   SnapshotStore,

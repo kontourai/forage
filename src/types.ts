@@ -64,6 +64,53 @@ export interface ExactSnapshotStore extends SnapshotStore {
   findExact(reference: SnapshotLookup): Promise<ExactSnapshotLookupResult>;
 }
 
+/**
+ * Caller-narrowable ceilings for filesystem source-head verification.  They
+ * are ceilings, never requests for more work than the store owner permits.
+ */
+export interface VerifiedHeadLimits {
+  /** At most this many immutable snapshot records may be considered. */
+  maxEntries?: number;
+  /** At most this many bytes of capacity and identity-index metadata may be read. */
+  maxIndexBytes?: number;
+  /** At most this many serialized snapshot-record bytes may be authenticated. */
+  maxVerifiedBodyBytes?: number;
+}
+
+/** A versioned, opaque, filesystem-local assertion about one authenticated head. */
+export interface SourceHeadWitness {
+  format: "forage.source-head-witness/v1";
+  sourceId: string;
+  headSnapshotRef: SnapshotLookup & { snapshotDigest: string };
+  /** Opaque token; binds the complete head identity and this physical store. */
+  token: string;
+}
+
+export type ReadVerifiedHeadResult =
+  | { kind: "found"; headSnapshotRef: SnapshotLookup & { snapshotDigest: string }; witness: SourceHeadWitness }
+  | { kind: "missing" }
+  | { kind: "unavailable" }
+  | { kind: "corrupt" }
+  | { kind: "unsupported" };
+
+/** Metadata-only result.  A changed result deliberately does not name a new head. */
+export type HeadWitnessComparisonResult =
+  | { kind: "matches" }
+  | { kind: "changed" }
+  | { kind: "missing" }
+  | { kind: "unavailable" }
+  | { kind: "corrupt" }
+  | { kind: "unsupported" };
+
+/** Additive concrete-store capability; generic SnapshotStore implementations remain valid. */
+export interface VerifiedHeadSnapshotStore extends ExactSnapshotStore {
+  readVerifiedHead(sourceId: string, limits?: VerifiedHeadLimits): Promise<ReadVerifiedHeadResult>;
+  compareHeadWitness(
+    witness: SourceHeadWitness,
+    limits?: VerifiedHeadLimits,
+  ): Promise<HeadWitnessComparisonResult>;
+}
+
 /** SSRF egress policy. Default construction is guarded (pin-on); opting out is explicit. */
 export interface EgressPolicy {
   /** deny classification for a resolved address family (private/loopback/link-local/metadata/NAT64…). */

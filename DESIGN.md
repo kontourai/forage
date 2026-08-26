@@ -46,6 +46,15 @@ interface Page {
 }
 ```
 
+`createFilesystemSnapshotStore()` additionally returns the concrete
+`VerifiedHeadSnapshotStore` capability. `readVerifiedHead(sourceId, limits)`
+authenticates one exact latest record behind a before/after metadata fence and
+returns a local opaque witness; `compareHeadWitness(witness, limits)` is a
+metadata-only currentness check. This is intentionally not added to generic
+`SnapshotStore`: object stores and other implementations retain their existing
+contract. Witnesses are bounded, fail closed on incomplete physical state, and
+do not create a history service, a sidecar index, or read-time repair path.
+
 For the MVP, `Snapshot` also carries the stable crawl-owned `sourceId` used by
 `SnapshotStore`, allowing `sourceRef` to resolve the exact stored bytes even
 when the fetched URL redirected.

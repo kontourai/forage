@@ -134,6 +134,30 @@ reference resolution and replay return the same distinction through their
 typed result errors (`snapshot-corrupt` versus `snapshot-store-error`) without
 exposing filesystem paths or raw record contents.
 
+### Verified source-head witnesses
+
+The concrete filesystem store also offers an additive, opt-in head witness;
+plain `SnapshotStore` implementations remain compatible. `readVerifiedHead()`
+performs one fenced operation: it fingerprints the bounded immutable record,
+capacity-index, and identity-index namespaces; authenticates the normal latest
+snapshot record; then fingerprints the same namespace again. A successful
+result contains an exact head reference and an opaque
+`forage.source-head-witness/v1` token. `compareHeadWitness()` only reads that
+metadata and reports `matches`, `changed`, `missing`, `unavailable`, `corrupt`,
+or `unsupported`; it never reads a snapshot body and never guesses a new head.
+
+The default ceilings are the store's 10,000-record history bound, 8 MiB of
+index bytes, and 96 MiB of aggregate authenticated record bytes. Callers may
+only lower them with `maxEntries`, `maxIndexBytes`, and
+`maxVerifiedBodyBytes`; a limit refusal is explicit rather than a partial
+witness. Incomplete released/legacy metadata is `unsupported`, and temporary,
+reservation, orphan, or unindexed state is refused.
+
+The token is stable across an unchanged restart but is deliberately local to
+the physical store, so a copy or restore can invalidate it. It attests to the
+metadata and to body authentication at capture time; it is not a silent-bitrot
+detector or a proof against an attacker who can rewrite every authority.
+
 ## Guarded single-URL fetch (`@kontourai/forage/egress`)
 
 The package root stays focused on `crawl()`; consumers that need the
