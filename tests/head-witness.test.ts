@@ -247,6 +247,26 @@ test("witnesses with accessors or unknown fields are unsupported before filesyst
       { kind: "unsupported" },
     );
     assert.equal(metadataStats, 0);
+
+    const memoizingNestedRef: Record<string, unknown> = { ...witness.headSnapshotRef };
+    Object.defineProperty(memoizingNestedRef, "url", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        Object.defineProperty(memoizingNestedRef, "url", {
+          configurable: true,
+          enumerable: true,
+          value: witness.headSnapshotRef.url,
+          writable: true,
+        });
+        return witness.headSnapshotRef.url;
+      },
+    });
+    assert.deepEqual(
+      await store.compareHeadWitness({ ...witness, headSnapshotRef: memoizingNestedRef } as unknown as SourceHeadWitness),
+      { kind: "unsupported" },
+    );
+    assert.equal(metadataStats, 0);
   } finally {
     testOnlyHeadWitnessIo.onMetadataLstat = undefined;
     await rm(root, { recursive: true, force: true });

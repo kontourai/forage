@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import { link, lstat, mkdir, open, opendir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
+import { types as utilTypes } from "node:util";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
 import {
@@ -822,7 +823,7 @@ function headToken(
 
 function closedOwnDataRecord(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | undefined {
   try {
-    if (typeof value !== "object" || value === null || Array.isArray(value) ||
+    if (typeof value !== "object" || value === null || Array.isArray(value) || utilTypes.isProxy(value) ||
       Object.getPrototypeOf(value) !== Object.prototype) return undefined;
     const descriptors = Object.getOwnPropertyDescriptors(value);
     const keys = Reflect.ownKeys(descriptors);
@@ -836,9 +837,6 @@ function closedOwnDataRecord(value: unknown, expectedKeys: readonly string[]): R
       }
       copied[key] = descriptor.value;
     }
-    // Proxies are not valid witness DTOs. This runs only after rejecting all
-    // accessors, so no user getter is invoked during normalization.
-    structuredClone(value);
     return copied;
   } catch {
     return undefined;
