@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/kontourai/forage/compare/v0.5.1...v0.6.0) (2026-08-26)
+
+
+### Features
+
+* **kit:** declare builder.build workflow routing ([#54](https://github.com/kontourai/forage/issues/54)) ([daae601](https://github.com/kontourai/forage/commit/daae601c58edf307201e3cdcac86c898600f2793))
+* **snapshot-store:** expose typed integrity failures without silent fallback ([#59](https://github.com/kontourai/forage/issues/59)) ([2002eed](https://github.com/kontourai/forage/commit/2002eed3c5cc54dfd3ff1f7463fcc88b10b0ea99))
+
 ## [0.5.1](https://github.com/kontourai/forage/compare/v0.5.0...v0.5.1) (2026-08-02)
 
 
