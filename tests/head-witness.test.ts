@@ -195,6 +195,51 @@ test("comparison copies mutable witness input before asynchronous filesystem wor
   }
 });
 
+test("capture shares the index-byte ceiling across both fingerprints", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "forage-head-index-ledger-"));
+  try {
+    const store = createFilesystemSnapshotStore({ root });
+    await store.put(snapshot());
+    let indexBytesRead = 0;
+    testOnlyHeadWitnessIo.onIndexRead = (bytes) => { indexBytesRead += bytes; };
+    assert.deepEqual(
+      await store.readVerifiedHead(snapshot().sourceId, { maxIndexBytes: 200 }),
+      { kind: "unavailable" },
+    );
+    assert.ok(indexBytesRead <= 200, `read ${indexBytesRead} index bytes despite a 200-byte ceiling`);
+  } finally {
+    testOnlyHeadWitnessIo.onIndexRead = undefined;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("witnesses with accessors or unknown fields are unsupported before filesystem metadata I/O", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "forage-head-closed-witness-"));
+  try {
+    const { store, witness } = await captured(root);
+    let metadataStats = 0;
+    testOnlyHeadWitnessIo.onMetadataLstat = () => { metadataStats += 1; };
+    const accessorWitness = {
+      ...witness,
+      get sourceId() {
+        return metadataStats < 2 ? witness.sourceId : "redirected-source";
+      },
+    } as SourceHeadWitness;
+    assert.deepEqual(await store.compareHeadWitness(accessorWitness), { kind: "unsupported" });
+    assert.equal(metadataStats, 0);
+
+    const unknownFieldWitness = {
+      ...witness,
+      private_path: "/not-a-witness-field",
+    } as unknown as SourceHeadWitness;
+    assert.deepEqual(await store.compareHeadWitness(unknownFieldWitness), { kind: "unsupported" });
+    assert.equal(metadataStats, 0);
+  } finally {
+    testOnlyHeadWitnessIo.onMetadataLstat = undefined;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("reservation, temporary, index, and limit states refuse rather than produce a partial witness", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "forage-head-refusal-"));
   try {

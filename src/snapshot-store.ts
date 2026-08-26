@@ -444,6 +444,10 @@ interface ResolvedHeadLimits {
   maxVerifiedBodyBytes: number;
 }
 
+interface HeadOperationLedger {
+  remainingIndexBytes: number;
+}
+
 interface EntryMetadata {
   dev: string;
   ino: string;
@@ -468,6 +472,8 @@ export const testOnlyHeadWitnessIo = {
   onVerifiedRecordRead: undefined as undefined | (() => void),
   afterVerifiedRecordRead: undefined as undefined | (() => void | Promise<void>),
   beforeFinalMetadataFence: undefined as undefined | (() => void | Promise<void>),
+  onMetadataLstat: undefined as undefined | (() => void),
+  onIndexRead: undefined as undefined | ((bytes: number) => void),
 };
 
 function headFailureFrom(error: unknown): HeadOutcome {
@@ -500,6 +506,13 @@ function resolveHeadLimits(input: VerifiedHeadLimits | undefined, maxHistoryFile
   };
 }
 
+function reserveIndexBytes(ledger: HeadOperationLedger, bytes: number): void {
+  if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > ledger.remainingIndexBytes) {
+    throw new HeadWitnessFailure("unavailable");
+  }
+  ledger.remainingIndexBytes -= bytes;
+}
+
 function metadataFromStat(stat: {
   dev: bigint;
   ino: bigint;
@@ -525,6 +538,7 @@ async function headDirectoryMetadata(directory: string, missing: "missing" | "un
     if ((error as NodeJS.ErrnoException).code === "ENOENT" && missing === "missing") return undefined;
     throw new HeadWitnessFailure("unavailable");
   }
+  testOnlyHeadWitnessIo.onMetadataLstat?.();
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new HeadWitnessFailure("corrupt");
   return metadataFromStat(stat);
 }
@@ -536,6 +550,7 @@ async function headFileMetadata(file: string): Promise<EntryMetadata> {
   } catch {
     throw new HeadWitnessFailure("unavailable");
   }
+  testOnlyHeadWitnessIo.onMetadataLstat?.();
   if (!stat.isFile() || stat.isSymbolicLink()) throw new HeadWitnessFailure("corrupt");
   return metadataFromStat(stat);
 }
@@ -566,6 +581,7 @@ async function readHeadIndexFile(file: string, metadata: EntryMetadata): Promise
   try {
     const text = await readBoundedRegularFile(file, maximum, true);
     if (text === undefined) throw new HeadWitnessFailure("unavailable");
+    testOnlyHeadWitnessIo.onIndexRead?.(Buffer.byteLength(text, "utf8"));
     return text;
   } catch (error) {
     if (error instanceof SnapshotStoreReadError) throw new HeadWitnessFailure(
@@ -625,6 +641,7 @@ async function fingerprintFilesystemHead(
   sourceId: string,
   maxHistoryFiles: number,
   limits: ResolvedHeadLimits,
+  ledger: HeadOperationLedger,
 ): Promise<{ kind: "missing" } | { kind: "present"; fingerprint: HeadFingerprint }> {
   const rootMetadata = await headDirectoryMetadata(root, "missing");
   if (rootMetadata === undefined) return { kind: "missing" };
@@ -666,39 +683,37 @@ async function fingerprintFilesystemHead(
   const identityDirectory = await headDirectoryMetadata(path.join(directory, "identity-index"));
   if (capacityDirectory === undefined || identityDirectory === undefined) throw new HeadWitnessFailure("unavailable");
 
-  const collectIndex = async (
+  const collectIndexMetadata = async (
     indexDirectory: string,
     kind: "capacity" | "identity",
     maximumEntries: number,
   ): Promise<[string, EntryMetadata, string][]> => {
     const indexNames = await boundedDirectoryNames(indexDirectory, maximumEntries);
     const collected: [string, EntryMetadata, string][] = [];
-    let total = 0;
     for (const name of indexNames) {
       const valid = kind === "capacity"
         ? name === "max-history-files.txt" || name === "initialized.txt" || /^(?:0|[1-9][0-9]*)\.txt$/.test(name)
         : /^[a-f0-9]{64}\.txt$/.test(name);
       if (!valid) throw new HeadWitnessFailure("unavailable");
       const metadata = await headFileMetadata(path.join(indexDirectory, name));
-      const size = Number(metadata.size);
-      total += size;
-      // Each of the two indexes gets at most half of the aggregate owner
-      // budget, so their separate preflights are still an aggregate bound.
-      if (!Number.isSafeInteger(total) || total > Math.floor(limits.maxIndexBytes / 2)) {
-        throw new HeadWitnessFailure("unavailable");
-      }
       collected.push([name, metadata, ""]);
-    }
-    // Index bytes are all preflighted before any content allocation.  Read at
-    // the exact observed size so a concurrent growth is refused, not absorbed.
-    for (const entry of collected) {
-      entry[2] = await readHeadIndexFile(path.join(indexDirectory, entry[0]), entry[1]);
     }
     return collected;
   };
 
-  const capacity = await collectIndex(path.join(directory, "capacity-index"), "capacity", limits.maxEntries + 2);
-  const identity = await collectIndex(path.join(directory, "identity-index"), "identity", limits.maxEntries);
+  const capacity = await collectIndexMetadata(path.join(directory, "capacity-index"), "capacity", limits.maxEntries + 2);
+  const identity = await collectIndexMetadata(path.join(directory, "identity-index"), "identity", limits.maxEntries);
+  const indexBytes = [...capacity, ...identity].reduce((total, [, metadata]) => total + Number(metadata.size), 0);
+  // Preflight both namespaces before allocating either one. The same ledger is
+  // shared by capture's before and after fingerprints, so a caller's ceiling
+  // is an operation bound rather than a per-pass suggestion.
+  reserveIndexBytes(ledger, indexBytes);
+  for (const entry of capacity) {
+    entry[2] = await readHeadIndexFile(path.join(directory, "capacity-index", entry[0]), entry[1]);
+  }
+  for (const entry of identity) {
+    entry[2] = await readHeadIndexFile(path.join(directory, "identity-index", entry[0]), entry[1]);
+  }
   const capacityMap = new Map(capacity.map(([name, , text]) => [name, text.trim()]));
   if (capacityMap.get("max-history-files.txt") !== String(maxHistoryFiles) || capacityMap.get("initialized.txt") !== "1") {
     throw new HeadWitnessFailure("unsupported");
@@ -805,14 +820,42 @@ function headToken(
     .digest("hex");
 }
 
-function copyValidWitness(value: unknown): SourceHeadWitness | undefined {
+function closedOwnDataRecord(value: unknown, expectedKeys: readonly string[]): Record<string, unknown> | undefined {
   try {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-    const witness = value as Record<string, unknown>;
-    if (witness.format !== "forage.source-head-witness/v1" || typeof witness.sourceId !== "string" ||
-      typeof witness.token !== "string" || !/^[a-f0-9]{64}$/.test(witness.token) ||
-      typeof witness.headSnapshotRef !== "object" || witness.headSnapshotRef === null) return undefined;
-    const supplied = witness.headSnapshotRef as Record<string, unknown>;
+    if (typeof value !== "object" || value === null || Array.isArray(value) ||
+      Object.getPrototypeOf(value) !== Object.prototype) return undefined;
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    if (keys.length !== expectedKeys.length || keys.some((key) =>
+      typeof key !== "string" || !expectedKeys.includes(key))) return undefined;
+    const copied: Record<string, unknown> = {};
+    for (const key of expectedKeys) {
+      const descriptor = descriptors[key];
+      if (descriptor === undefined || !("value" in descriptor) || descriptor.get !== undefined || descriptor.set !== undefined) {
+        return undefined;
+      }
+      copied[key] = descriptor.value;
+    }
+    // Proxies are not valid witness DTOs. This runs only after rejecting all
+    // accessors, so no user getter is invoked during normalization.
+    structuredClone(value);
+    return copied;
+  } catch {
+    return undefined;
+  }
+}
+
+function copyValidWitness(value: unknown): SourceHeadWitness | undefined {
+  const witness = closedOwnDataRecord(value, ["format", "sourceId", "headSnapshotRef", "token"]);
+  if (witness === undefined || witness.format !== "forage.source-head-witness/v1" ||
+    typeof witness.sourceId !== "string" || typeof witness.token !== "string" ||
+    !/^[a-f0-9]{64}$/.test(witness.token)) return undefined;
+  const supplied = closedOwnDataRecord(
+    witness.headSnapshotRef,
+    ["sourceId", "url", "bodyHash", "fetchedAt", "snapshotDigest"],
+  );
+  if (supplied === undefined) return undefined;
+  try {
     const reference: SnapshotLookup = {
       sourceId: supplied.sourceId as string,
       url: supplied.url as string,
@@ -822,8 +865,6 @@ function copyValidWitness(value: unknown): SourceHeadWitness | undefined {
     };
     assertExactLookup(reference);
     if (reference.snapshotDigest === undefined || reference.sourceId !== witness.sourceId) return undefined;
-    // Copy every primitive before the first await.  A caller cannot turn a
-    // validated witness into a different filesystem lookup mid-comparison.
     return {
       format: "forage.source-head-witness/v1",
       sourceId: witness.sourceId,
@@ -968,7 +1009,8 @@ export function createFilesystemSnapshotStore(
     if (!sourceSupported(sourceId)) return { kind: "unsupported" };
     try {
       const limits = resolveHeadLimits(suppliedLimits, maxHistoryFiles);
-      const before = await fingerprintFilesystemHead(root, sourceId, maxHistoryFiles, limits);
+      const ledger: HeadOperationLedger = { remainingIndexBytes: limits.maxIndexBytes };
+      const before = await fingerprintFilesystemHead(root, sourceId, maxHistoryFiles, limits, ledger);
       if (before.kind === "missing") return { kind: "missing" };
       const { head } = await readAuthenticatedHead(root, sourceId, before.fingerprint);
       const reference = exactHeadReference(head);
@@ -977,7 +1019,7 @@ export function createFilesystemSnapshotStore(
       } catch {
         return { kind: "unsupported" };
       }
-      const after = await fingerprintFilesystemHead(root, sourceId, maxHistoryFiles, limits);
+      const after = await fingerprintFilesystemHead(root, sourceId, maxHistoryFiles, limits, ledger);
       if (after.kind !== "present" || after.fingerprint.digest !== before.fingerprint.digest) {
         return { kind: "unavailable" };
       }
@@ -1002,7 +1044,8 @@ export function createFilesystemSnapshotStore(
     if (suppliedWitness === undefined || !sourceSupported(suppliedWitness.sourceId)) return { kind: "unsupported" };
     try {
       const limits = resolveHeadLimits(suppliedLimits, maxHistoryFiles);
-      const current = await fingerprintFilesystemHead(root, suppliedWitness.sourceId, maxHistoryFiles, limits);
+      const ledger: HeadOperationLedger = { remainingIndexBytes: limits.maxIndexBytes };
+      const current = await fingerprintFilesystemHead(root, suppliedWitness.sourceId, maxHistoryFiles, limits, ledger);
       if (current.kind === "missing") return { kind: "missing" };
       return headToken(current.fingerprint, suppliedWitness.headSnapshotRef) === suppliedWitness.token
         ? { kind: "matches" }
