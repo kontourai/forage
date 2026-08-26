@@ -234,6 +234,19 @@ test("witnesses with accessors or unknown fields are unsupported before filesyst
     } as unknown as SourceHeadWitness;
     assert.deepEqual(await store.compareHeadWitness(unknownFieldWitness), { kind: "unsupported" });
     assert.equal(metadataStats, 0);
+
+    const nestedUnknownFieldWitness = {
+      ...witness,
+      headSnapshotRef: { ...witness.headSnapshotRef, private_path: "/not-a-ref-field" },
+    } as unknown as SourceHeadWitness;
+    assert.deepEqual(await store.compareHeadWitness(nestedUnknownFieldWitness), { kind: "unsupported" });
+    assert.equal(metadataStats, 0);
+
+    assert.deepEqual(
+      await store.compareHeadWitness(new Proxy({ ...witness }, {}) as SourceHeadWitness),
+      { kind: "unsupported" },
+    );
+    assert.equal(metadataStats, 0);
   } finally {
     testOnlyHeadWitnessIo.onMetadataLstat = undefined;
     await rm(root, { recursive: true, force: true });
