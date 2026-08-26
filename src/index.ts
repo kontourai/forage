@@ -30,6 +30,14 @@ export {
 } from "./snapshot-store.js";
 export type { FilesystemSnapshotStoreOptions } from "./snapshot-store.js";
 export {
+  SnapshotStoreReadError,
+  isSnapshotStoreReadError,
+} from "./snapshot-store-errors.js";
+export type {
+  SnapshotStoreReadErrorCode,
+  SnapshotStoreReadErrorReason,
+} from "./snapshot-store-errors.js";
+export {
   createForageRenderImpl,
   installGuardedPageNetwork,
   preparePinnedBrowserNavigation,

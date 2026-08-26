@@ -125,6 +125,15 @@ so cooperating store instances and processes cannot consume the same remaining
 slot. A process interrupted after reservation can complete the same immutable
 snapshot idempotently on retry. The store does not silently delete evidence.
 
+Filesystem reads are fail-closed. If an owned snapshot record is malformed,
+has a digest mismatch, or belongs to a different source, `list`, `latest`, and
+`get` reject with `SnapshotStoreReadError` whose safe `code` is
+`"snapshot-corrupt"`; storage/race failures use `"snapshot-store-error"`.
+They never silently substitute a partial history or an empty baseline. Exact
+reference resolution and replay return the same distinction through their
+typed result errors (`snapshot-corrupt` versus `snapshot-store-error`) without
+exposing filesystem paths or raw record contents.
+
 ## Guarded single-URL fetch (`@kontourai/forage/egress`)
 
 The package root stays focused on `crawl()`; consumers that need the

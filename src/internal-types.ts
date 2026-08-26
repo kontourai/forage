@@ -10,7 +10,9 @@ export type FetchErrorKind =
   | "http-error"
   | "response-too-large"
   | "too-many-redirects"
-  | "no-snapshot";
+  | "no-snapshot"
+  | "snapshot-corrupt"
+  | "snapshot-store-error";
 
 export interface FetchError {
   kind: FetchErrorKind;

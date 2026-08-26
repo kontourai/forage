@@ -61,6 +61,11 @@ when the fetched URL redirected.
 - **Deterministic replay.** Every fetched page is snapshotted with a `sourceRef`;
   `mode: "replay"` re-serves snapshots byte-identically, network-free — so
   downstream extraction is reproducible and offline-testable.
+- **Fail-closed snapshot reads.** A corrupt owned filesystem record is never
+  silently skipped to fabricate a partial or empty replay baseline. Native
+  store reads throw a safe typed `SnapshotStoreReadError`; consumer-facing
+  exact resolution and replay preserve `snapshot-corrupt` separately from a
+  genuine missing snapshot and storage unavailability.
 - **Never-throws.** A malformed page / parse failure degrades to a warning, not a
   thrown crawl. The only whole-crawl typed error is invalid-config.
 - **No AI in core.** Deterministic mechanics only. Intelligence, if wanted, plugs

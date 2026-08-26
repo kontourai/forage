@@ -1,9 +1,15 @@
 /** Filesystem and in-memory stores lifted from traverse/fetch/snapshot-store.ts. */
 import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import { link, lstat, mkdir, open, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
+import {
+  snapshotCorrupt,
+  snapshotStoreFailure,
+  SnapshotStoreReadError,
+} from "./snapshot-store-errors.js";
 import type {
   ExactSnapshotLookupResult,
   ExactSnapshotStore,
@@ -112,42 +118,64 @@ function snapshotIdentityDigest(reference: SnapshotLookup): string {
     .digest("hex");
 }
 
-async function readBoundedRegularFile(file: string, maxBytes: number): Promise<string | undefined> {
+async function readBoundedRegularFile(
+  file: string,
+  maxBytes: number,
+  required = false,
+): Promise<string | undefined> {
   let pathStat;
   try {
     pathStat = await lstat(file);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if (!required) return undefined;
+      throw snapshotStoreFailure("record-disappeared");
+    }
+    throw snapshotStoreFailure("read-failed");
   }
-  if (!pathStat.isFile() || pathStat.isSymbolicLink() || pathStat.size > maxBytes) {
-    throw new Error("snapshot store entry is not a bounded regular file");
+  if (!pathStat.isFile() || pathStat.isSymbolicLink()) {
+    throw snapshotCorrupt("non-regular-entry");
+  }
+  if (pathStat.size > maxBytes) {
+    throw snapshotStoreFailure("read-limit");
   }
   let handle;
   try {
-    handle = await open(file, "r");
+    handle = await open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw snapshotStoreFailure("record-disappeared");
+    }
+    throw snapshotStoreFailure("read-failed");
   }
   try {
-    const handleStat = await handle.stat();
+    let handleStat;
+    try {
+      handleStat = await handle.stat();
+    } catch {
+      throw snapshotStoreFailure("read-failed");
+    }
     if (
       !handleStat.isFile() ||
       handleStat.size > maxBytes ||
       handleStat.dev !== pathStat.dev ||
       handleStat.ino !== pathStat.ino
     ) {
-      throw new Error("snapshot store entry changed during validation");
+      throw snapshotStoreFailure("read-raced");
     }
     const chunks: Buffer[] = [];
     let total = 0;
     for (;;) {
       const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - total + 1));
-      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, null);
+      let bytesRead: number;
+      try {
+        ({ bytesRead } = await handle.read(buffer, 0, buffer.byteLength, null));
+      } catch {
+        throw snapshotStoreFailure("read-failed");
+      }
       if (bytesRead === 0) break;
       total += bytesRead;
-      if (total > maxBytes) throw new Error("snapshot store entry grew beyond its limit");
+      if (total > maxBytes) throw snapshotStoreFailure("read-limit");
       chunks.push(buffer.subarray(0, bytesRead));
     }
     return Buffer.concat(chunks, total).toString("utf8");
@@ -289,17 +317,21 @@ async function ensureCapacityIndex(
   return indexDirectory;
 }
 
-async function readSnapshotFile(file: string): Promise<Snapshot | undefined> {
-  const text = await readBoundedRegularFile(file, MAX_SNAPSHOT_FILE_BYTES);
+async function readSnapshotFile(file: string, required = false): Promise<Snapshot | undefined> {
+  const text = await readBoundedRegularFile(file, MAX_SNAPSHOT_FILE_BYTES, required);
   if (text === undefined) return undefined;
   let parsed: unknown;
   try {
     parsed = fromDiskShape(JSON.parse(text));
-  } catch (error) {
-    throw new Error("snapshot store record is malformed", { cause: error });
+  } catch {
+    throw snapshotCorrupt("malformed-record");
   }
-  if (!isSnapshot(parsed)) throw new Error("snapshot store record has an invalid shape");
-  return parsed;
+  if (!isSnapshot(parsed)) throw snapshotCorrupt("invalid-record");
+  try {
+    return canonicalDurableSnapshot(parsed);
+  } catch {
+    throw snapshotCorrupt("invalid-record");
+  }
 }
 
 function toDiskShape(snapshot: Snapshot): Record<string, unknown> {
@@ -315,6 +347,10 @@ function fromDiskShape(value: unknown): unknown {
   if (typeof value !== "object" || value === null) return value;
   const record = value as Record<string, unknown>;
   if (typeof record.bodyBase64 !== "string") return value;
+  if (
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(record.bodyBase64) ||
+    Buffer.from(record.bodyBase64, "base64").toString("base64") !== record.bodyBase64
+  ) throw new TypeError("snapshot binary body is not canonical base64");
   const { bodyBase64, ...rest } = record;
   return {
     ...rest,
@@ -370,28 +406,32 @@ async function readAllSnapshots(
   maxHistoryFiles: number,
 ): Promise<Snapshot[]> {
   const directory = path.join(root, sourceDirName(sourceId));
+  let directoryStat;
+  try {
+    directoryStat = await lstat(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw snapshotStoreFailure("read-failed");
+  }
+  if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+    throw snapshotCorrupt("non-regular-entry");
+  }
   let names: string[];
   try {
     names = await readdir(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
+  } catch {
+    throw snapshotStoreFailure("read-failed");
   }
   const records = names.filter((name) => name.endsWith(".json"));
   if (records.length > maxHistoryFiles) {
-    throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+    throw snapshotStoreFailure("read-limit");
   }
   const snapshots = new Map<string, Snapshot>();
   for (const name of records) {
-    try {
-      const parsed = await readSnapshotFile(path.join(directory, name));
-      if (parsed === undefined) continue;
-      const durable = canonicalDurableSnapshot(parsed);
-      if (durable.sourceId !== sourceId) continue;
-      snapshots.set(snapshotEnvelopeDigest(durable), durable);
-    } catch {
-      // Malformed or foreign content does not poison the store.
-    }
+    const durable = await readSnapshotFile(path.join(directory, name), true);
+    if (durable === undefined) throw snapshotStoreFailure("record-disappeared");
+    if (durable.sourceId !== sourceId) throw snapshotCorrupt("foreign-source-record");
+    snapshots.set(snapshotEnvelopeDigest(durable), durable);
   }
   return sortSnapshots([...snapshots.values()]);
 }
@@ -412,7 +452,7 @@ async function persistFilesystemSnapshot(
   const capacityIndex = await ensureCapacityIndex(directory, maxHistoryFiles);
   await reserveCapacitySlot(capacityIndex, filename, maxHistoryFiles);
   if (!await publishImmutableFile(record, serialized)) {
-    const existing = await readSnapshotFile(record);
+    const existing = await readSnapshotFile(record, true);
     if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
       throw new Error("immutable snapshot record conflicts with the supplied capture");
     }
@@ -436,10 +476,10 @@ async function findExactFilesystemSnapshot(
     directoryStat = await lstat(directory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return { kind: "missing" };
-    throw error;
+    throw snapshotStoreFailure("read-failed");
   }
   if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
-    throw new Error("snapshot source directory is invalid");
+    throw snapshotCorrupt("non-regular-entry");
   }
   let filename = snapshotFileNameFromLookup(reference);
   if (filename === undefined) {
@@ -451,12 +491,13 @@ async function findExactFilesystemSnapshot(
     } else {
       filename = indexText.trim();
       if (!/^[0-9A-Za-z._-]+-[a-f0-9]{64}\.json$/.test(filename)) {
-        throw new Error("snapshot identity index is invalid");
+        throw snapshotCorrupt("invalid-identity-index");
       }
     }
   }
   const snapshot = await readSnapshotFile(path.join(directory, filename));
   if (snapshot === undefined) return { kind: "missing" };
+  if (snapshot.sourceId !== reference.sourceId) throw snapshotCorrupt("foreign-source-record");
   return exactLookupMatches(snapshot, reference)
     ? { kind: "found", snapshot }
     : { kind: "mismatch" };
@@ -550,8 +591,10 @@ export async function replaySource(
   } catch (error) {
     return {
       error: {
-        kind: "no-snapshot",
-        message: `snapshot replay failed for sourceId "${sourceId}" (${error instanceof Error ? error.message : String(error)})`,
+        kind: error instanceof SnapshotStoreReadError ? error.code : "snapshot-store-error",
+        message: error instanceof SnapshotStoreReadError && error.code === "snapshot-corrupt"
+          ? "snapshot replay cannot use a corrupt stored snapshot"
+          : "snapshot replay could not read the supplied store",
       },
     };
   }

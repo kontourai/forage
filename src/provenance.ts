@@ -5,6 +5,7 @@ import type {
   SnapshotLookup,
   SnapshotStore,
 } from "./types.js";
+import { isSnapshotStoreReadError } from "./snapshot-store-errors.js";
 
 const MAX_REFERENCE_LENGTH = 16 * 1024;
 const MAX_LEGACY_REFERENCE_LENGTH = 1024 * 1024;
@@ -79,6 +80,7 @@ export type SnapshotSourceRefResolution =
           | "invalid-reference"
           | "snapshot-not-found"
           | "snapshot-mismatch"
+          | "snapshot-corrupt"
           | "snapshot-store-error";
         message: string;
       };
@@ -332,12 +334,14 @@ export async function resolveSnapshotSourceRef(
       throw new TypeError("snapshot store does not implement exact lookup");
     }
     return resolveCandidate(await store.findExact(reference), reference);
-  } catch {
+  } catch (error) {
     return {
       ok: false,
       error: {
-        kind: "snapshot-store-error",
-        message: "the supplied snapshot store could not resolve the reference",
+        kind: isSnapshotStoreReadError(error) ? error.code : "snapshot-store-error",
+        message: isSnapshotStoreReadError(error) && error.code === "snapshot-corrupt"
+          ? "the supplied snapshot store contains a corrupt snapshot"
+          : "the supplied snapshot store could not resolve the reference",
       },
     };
   }
