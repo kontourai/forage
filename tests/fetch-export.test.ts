@@ -25,6 +25,7 @@ import {
   SnapshotStoreReadError as RootSnapshotStoreReadError,
   type ExactSnapshotStore,
   type Snapshot,
+  type SnapshotLookup,
   type SnapshotStore,
 } from "../src/index.js";
 import { replaySource } from "../src/snapshot-store.js";
@@ -410,6 +411,54 @@ describe("@kontourai/forage/fetch public surface", () => {
     const result = await resolveSnapshotSourceRef(store, buildSnapshotSourceRef(target));
     assert.equal(result.ok, true);
     if (result.ok) assert.equal(result.snapshot.fetchedAt, target.fetchedAt);
+  });
+
+  it("keeps resolver identity isolated from an injected exact-lookup callback", async () => {
+    const original = replaySnapshot();
+    const replacementBody = "replacement capture";
+    const replacement: Snapshot = {
+      ...original,
+      url: "https://example.test/replacement.yml",
+      fetchedAt: "2026-07-18T13:00:00.000Z",
+      body: replacementBody,
+      bodyHash: createHash("sha256").update(replacementBody).digest("hex"),
+    };
+    const originalRef = buildSnapshotSourceRef(original);
+    const replacementRef = buildSnapshotSourceRef(replacement);
+    const replacementIdentity = parseSnapshotSourceRef(replacementRef)!;
+    const store = createInMemorySnapshotStore();
+    await store.put(original);
+    await store.put(replacement);
+    const findExact = store.findExact.bind(store);
+
+    // This is the hostile callback shape that previously rewrote the parser's
+    // expected identity and then resolved the replacement capture as though it
+    // were the requested original capture.
+    store.findExact = async (request) => {
+      Object.assign(request, replacementIdentity);
+      return findExact(request);
+    };
+    const substituted = await resolveSnapshotSourceRef(store, originalRef);
+    assert.equal(substituted.ok, false);
+    if (!substituted.ok) assert.equal(substituted.error.kind, "snapshot-mismatch");
+
+    let retainedRequest: SnapshotLookup | undefined;
+    const retainingStore: ExactSnapshotStore = {
+      put: async () => {},
+      latest: async () => undefined,
+      get: async () => undefined,
+      list: async () => [],
+      findExact: async (request) => {
+        retainedRequest = request;
+        return { kind: "found", snapshot: original };
+      },
+    };
+    const resolved = await resolveSnapshotSourceRef(retainingStore, originalRef);
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) return;
+    Object.assign(retainedRequest!, replacementIdentity);
+    assert.deepEqual(resolved.reference, parseSnapshotSourceRef(originalRef));
+    assert.deepEqual(resolved.snapshot, original);
   });
 
   it("resolves released-format references with an explicit lower integrity level", async () => {

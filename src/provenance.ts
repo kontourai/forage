@@ -250,7 +250,7 @@ function cloneDurableSnapshot(snapshot: Snapshot): Snapshot {
 
 function matchingSnapshot(
   snapshot: Snapshot,
-  reference: ParsedSnapshotSourceRef,
+  reference: Readonly<ParsedSnapshotSourceRef>,
 ): boolean {
   return snapshot.sourceId === reference.sourceId &&
     snapshot.url === reference.url &&
@@ -261,7 +261,7 @@ function matchingSnapshot(
 
 function resolveCandidate(
   lookup: ExactSnapshotLookupResult,
-  reference: ParsedSnapshotSourceRef,
+  reference: Readonly<ParsedSnapshotSourceRef>,
 ): SnapshotSourceRefResolution {
   if (lookup.kind === "missing") {
     return {
@@ -297,7 +297,9 @@ function resolveCandidate(
     integrity: reference.snapshotDigest === undefined
       ? "body-and-identity"
       : "snapshot-envelope",
-    reference,
+    // `reference` is the resolver-owned expected identity, never the object
+    // supplied to an injected store callback.
+    reference: reference as ParsedSnapshotSourceRef,
     snapshot: cloneDurableSnapshot(candidate),
   };
 }
@@ -335,11 +337,18 @@ export async function resolveSnapshotSourceRef(
     };
   }
 
+  // A SnapshotStore is an extension seam. Do not let an implementation mutate
+  // the parsed reference that authenticates its returned candidate (or that we
+  // return to the caller). The expected identity is private and immutable;
+  // every callback gets a separate, disposable request object.
+  const expectedReference = Object.freeze({ ...reference });
+
   try {
     if (store.findExact === undefined) {
       throw new TypeError("snapshot store does not implement exact lookup");
     }
-    return resolveCandidate(await store.findExact(reference), reference);
+    const lookup = await store.findExact({ ...expectedReference });
+    return resolveCandidate(lookup, expectedReference);
   } catch (error) {
     return {
       ok: false,
