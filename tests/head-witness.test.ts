@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,6 +9,7 @@ import {
   type Snapshot,
   type SourceHeadWitness,
 } from "../src/index.js";
+import { testOnlyHeadWitnessIo } from "../src/snapshot-store.js";
 
 function snapshot(minute = 0, body = "head body"): Snapshot {
   return {
@@ -71,18 +72,38 @@ test("an independent filesystem writer changes an older witness without a writer
   }
 });
 
-test("comparison does not authenticate or deserialize record bodies", async () => {
+test("comparison performs zero snapshot-body reads while capture authenticates bodies", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "forage-head-metadata-only-"));
+  try {
+    const { store, witness } = await captured(root);
+    let verifiedRecordReads = 0;
+    testOnlyHeadWitnessIo.onVerifiedRecordRead = () => { verifiedRecordReads += 1; };
+    assert.deepEqual(await store.compareHeadWitness(witness), { kind: "matches" });
+    assert.equal(verifiedRecordReads, 0);
+    assert.equal((await store.readVerifiedHead(snapshot().sourceId)).kind, "found");
+    assert.equal(verifiedRecordReads, 1);
+  } finally {
+    testOnlyHeadWitnessIo.onVerifiedRecordRead = undefined;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("same-size rewrites and restore ABA invalidate the physical witness", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "forage-head-aba-"));
   try {
     const { store, witness } = await captured(root);
     const directory = await sourceDirectory(root);
     const [record] = (await readdir(directory)).filter((entry) => entry.endsWith(".json"));
-    // Metadata comparison succeeds while a body is made unreadable.  A capture
-    // must authenticate it and therefore cannot use this as a shortcut.
-    await chmod(path.join(directory, record), 0o000);
-    assert.deepEqual(await store.compareHeadWitness(witness), { kind: "matches" });
-    const recapture = await store.readVerifiedHead(snapshot().sourceId);
-    assert.notEqual(recapture.kind, "found");
+    const recordPath = path.join(directory, record);
+    const original = await readFile(recordPath, "utf8");
+    const replacement = `${original.slice(0, -1)}${original.endsWith("\n") ? " " : "\n"}`;
+    assert.equal(Buffer.byteLength(replacement), Buffer.byteLength(original));
+    await writeFile(recordPath, replacement, "utf8");
+    assert.deepEqual(await store.compareHeadWitness(witness), { kind: "changed" });
+    await writeFile(recordPath, original, "utf8");
+    // Restoring exact content cannot resurrect an old token: ctime/mtime and
+    // the final metadata fence retain the intervening physical mutation.
+    assert.deepEqual(await store.compareHeadWitness(witness), { kind: "changed" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

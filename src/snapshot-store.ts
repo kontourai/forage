@@ -463,6 +463,11 @@ interface HeadFingerprint {
   digest: string;
 }
 
+/** @internal Test-only read spy; deliberately not re-exported by any package surface. */
+export const testOnlyHeadWitnessIo = {
+  onVerifiedRecordRead: undefined as undefined | (() => void),
+};
+
 function headFailureFrom(error: unknown): HeadOutcome {
   if (error instanceof HeadWitnessFailure) return error.kind;
   if (error instanceof SnapshotStoreReadError) {
@@ -493,7 +498,13 @@ function resolveHeadLimits(input: VerifiedHeadLimits | undefined, maxHistoryFile
   };
 }
 
-function metadataFromStat(stat: Awaited<ReturnType<typeof lstat>>): EntryMetadata {
+function metadataFromStat(stat: {
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  ctimeNs: bigint;
+  mtimeNs: bigint;
+}): EntryMetadata {
   return {
     dev: String(stat.dev),
     ino: String(stat.ino),
@@ -507,7 +518,7 @@ async function headDirectoryMetadata(directory: string, missing: "missing" | "un
   Promise<EntryMetadata | undefined> {
   let stat;
   try {
-    stat = await lstat(directory);
+    stat = await lstat(directory, { bigint: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT" && missing === "missing") return undefined;
     throw new HeadWitnessFailure("unavailable");
@@ -519,7 +530,7 @@ async function headDirectoryMetadata(directory: string, missing: "missing" | "un
 async function headFileMetadata(file: string): Promise<EntryMetadata> {
   let stat;
   try {
-    stat = await lstat(file);
+    stat = await lstat(file, { bigint: true });
   } catch {
     throw new HeadWitnessFailure("unavailable");
   }
@@ -560,6 +571,44 @@ async function readHeadIndexFile(file: string, metadata: EntryMetadata): Promise
     );
     if (error instanceof HeadWitnessFailure) throw error;
     throw new HeadWitnessFailure("unavailable");
+  }
+}
+
+function sameMetadata(left: EntryMetadata, right: EntryMetadata): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size &&
+    left.ctimeNs === right.ctimeNs && left.mtimeNs === right.mtimeNs;
+}
+
+async function assertFingerprintStillPresent(
+  root: string,
+  sourceDirectory: string,
+  rootMetadata: EntryMetadata,
+  sourceMetadata: EntryMetadata,
+  capacityDirectory: EntryMetadata,
+  identityDirectory: EntryMetadata,
+  records: readonly [string, EntryMetadata][],
+  capacity: readonly [string, EntryMetadata, string][],
+  identity: readonly [string, EntryMetadata, string][],
+): Promise<void> {
+  const sameDirectory = async (file: string, expected: EntryMetadata) => {
+    const current = await headDirectoryMetadata(file);
+    if (current === undefined || !sameMetadata(current, expected)) throw new HeadWitnessFailure("unavailable");
+  };
+  const sameFile = async (file: string, expected: EntryMetadata) => {
+    if (!sameMetadata(await headFileMetadata(file), expected)) throw new HeadWitnessFailure("unavailable");
+  };
+  // This closes the metadata-only comparison fence as well: directory entries,
+  // index contents, and same-size rewrites cannot be mixed into one token.
+  await sameDirectory(root, rootMetadata);
+  await sameDirectory(sourceDirectory, sourceMetadata);
+  await sameDirectory(path.join(sourceDirectory, "capacity-index"), capacityDirectory);
+  await sameDirectory(path.join(sourceDirectory, "identity-index"), identityDirectory);
+  for (const [name, metadata] of records) await sameFile(path.join(sourceDirectory, name), metadata);
+  for (const [name, metadata] of capacity) {
+    await sameFile(path.join(sourceDirectory, "capacity-index", name), metadata);
+  }
+  for (const [name, metadata] of identity) {
+    await sameFile(path.join(sourceDirectory, "identity-index", name), metadata);
   }
 }
 
@@ -669,6 +718,17 @@ async function fingerprintFilesystemHead(
   for (const [, , text] of identity) {
     if (!recordSet.has(text.trim())) throw new HeadWitnessFailure("unavailable");
   }
+  await assertFingerprintStillPresent(
+    root,
+    directory,
+    rootMetadata,
+    sourceMetadata,
+    capacityDirectory,
+    identityDirectory,
+    recordMetadata,
+    capacity,
+    identity,
+  );
   const base = {
     root: rootMetadata,
     source: sourceMetadata,
@@ -691,6 +751,7 @@ async function readAuthenticatedHead(
   for (const [name, metadata] of fingerprint.records) {
     const size = Number(metadata.size);
     const snapshot = await readSnapshotFile(path.join(root, sourceDirName(sourceId), name), true, false, size);
+    testOnlyHeadWitnessIo.onVerifiedRecordRead?.();
     if (snapshot === undefined) throw new HeadWitnessFailure("unavailable");
     if (snapshot.sourceId !== sourceId) throw new HeadWitnessFailure("corrupt");
     assertSnapshotFileIdentity(name, snapshot);
