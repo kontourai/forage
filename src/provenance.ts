@@ -18,8 +18,11 @@ function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-export function snapshotEnvelopeDigest(snapshot: Snapshot): string {
-  assertReferenceableSnapshot(snapshot);
+export function snapshotEnvelopeDigest(
+  snapshot: Snapshot,
+  releasedIdentity = false,
+): string {
+  assertReferenceableSnapshot(snapshot, releasedIdentity);
   const envelope = {
     sourceId: snapshot.sourceId,
     url: snapshot.url,
@@ -221,8 +224,11 @@ function assertReferenceableSnapshot(
 }
 
 /** Return only the validated fields that are committed by a durable reference. */
-export function canonicalDurableSnapshot(snapshot: Snapshot): Snapshot {
-  assertReferenceableSnapshot(snapshot);
+export function canonicalDurableSnapshot(
+  snapshot: Snapshot,
+  releasedIdentity = false,
+): Snapshot {
+  assertReferenceableSnapshot(snapshot, releasedIdentity);
   return cloneDurableSnapshot(snapshot);
 }
 

@@ -699,7 +699,7 @@ describe("@kontourai/forage/fetch public surface", () => {
     }
   });
 
-  it("fails closed with a typed integrity failure when an owned on-disk body or digest is tampered", async () => {
+  it("fails closed with a typed integrity failure when an owned on-disk envelope is tampered", async () => {
     const corrupted = replaySnapshot();
     const validBody = "model: valid sibling";
     const validSibling: Snapshot = {
@@ -711,6 +711,10 @@ describe("@kontourai/forage/fetch public surface", () => {
     for (const mutate of [
       (record: Record<string, unknown>) => { record.body = "model: tampered on disk"; },
       (record: Record<string, unknown>) => { record.bodyHash = "f".repeat(64); },
+      (record: Record<string, unknown>) => { record.status = 503; },
+      (record: Record<string, unknown>) => { record.headers = { etag: '"tampered"' }; },
+      (record: Record<string, unknown>) => { record.redirects = ["https://example.test/tampered"]; },
+      (record: Record<string, unknown>) => { record.rendered = true; },
     ]) {
       const root = await mkdtemp(path.join(tmpdir(), "forage-integrity-failure-"));
       try {
@@ -742,6 +746,70 @@ describe("@kontourai/forage/fetch public surface", () => {
       } finally {
         await rm(root, { recursive: true, force: true });
       }
+    }
+  });
+
+  it("fails exact lookup if an indexed record disappears after its index is read", async () => {
+    const snapshot = replaySnapshot();
+    const root = await mkdtemp(path.join(tmpdir(), "forage-indexed-record-disappears-"));
+    try {
+      const { filesystem, record } = await recordPath(root, snapshot);
+      const sourceRef = `forage-snapshot:${encodeURIComponent(snapshot.sourceId)}?${new URLSearchParams({
+        url: snapshot.url,
+        sha256: snapshot.bodyHash,
+        fetchedAt: snapshot.fetchedAt,
+      })}`;
+      const reference = parseSnapshotSourceRef(sourceRef)!;
+      await rm(record);
+      await assert.rejects(
+        () => filesystem.findExact(reference),
+        (error: unknown) => error instanceof SnapshotStoreReadError && error.code === "snapshot-store-error",
+      );
+      const resolution = await resolveSnapshotSourceRef(filesystem, sourceRef);
+      assert.equal(resolution.ok, false);
+      if (!resolution.ok) assert.equal(resolution.error.kind, "snapshot-store-error");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("replays a valid long-identity legacy filesystem record", async () => {
+    const sourceId = "s".repeat(1025);
+    const body = "legacy body";
+    const snapshot: Snapshot = {
+      sourceId,
+      url: "https://example.test/legacy-long.json",
+      status: 200,
+      fetchedAt: "legacy-capture",
+      body,
+      bodyHash: createHash("sha256").update(body).digest("hex"),
+    };
+    const root = await mkdtemp(path.join(tmpdir(), "forage-legacy-long-identity-"));
+    try {
+      const sourceDirectory = `${sourceId.slice(0, 80)}-${createHash("sha256").update(sourceId).digest("hex").slice(0, 8)}`;
+      const directory = path.join(root, sourceDirectory);
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        path.join(directory, `${snapshot.fetchedAt}-${snapshot.bodyHash.slice(0, 12)}.json`),
+        JSON.stringify(snapshot),
+        "utf8",
+      );
+      const reference = `forage-snapshot:${encodeURIComponent(sourceId)}?${new URLSearchParams({
+        url: snapshot.url,
+        sha256: snapshot.bodyHash,
+        fetchedAt: snapshot.fetchedAt,
+      })}`;
+      const result = await resolveSnapshotSourceRef(
+        createFilesystemSnapshotStore({ root }),
+        reference,
+      );
+      assert.equal(result.ok, true);
+      if (result.ok) {
+        assert.equal(result.integrity, "body-and-identity");
+        assert.equal(result.snapshot.sourceId, sourceId);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 

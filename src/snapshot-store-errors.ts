@@ -8,6 +8,7 @@ export type SnapshotStoreReadErrorReason =
   | "malformed-record"
   | "invalid-record"
   | "foreign-source-record"
+  | "record-identity-mismatch"
   | "non-regular-entry"
   | "invalid-identity-index"
   | "record-disappeared"

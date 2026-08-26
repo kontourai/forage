@@ -25,6 +25,8 @@ const MAX_SOURCE_ID_LENGTH = 1024;
 const MAX_URL_LENGTH = 8 * 1024;
 const MAX_FETCHED_AT_LENGTH = 256;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const ENVELOPE_RECORD_FILE = /^[0-9A-Za-z._-]+-[a-f0-9]{64}\.json$/;
+const RELEASED_RECORD_FILE = /^[0-9A-Za-z._-]+-[a-f0-9]{12}\.json$/;
 
 function sourceDirName(sourceId: string): string {
   const safe =
@@ -58,6 +60,20 @@ function releasedSnapshotFileName(reference: SnapshotLookup): string | undefined
   const timestamp = reference.fetchedAt.replace(/[^0-9A-Za-z._-]/g, "-");
   const filename = `${timestamp}-${reference.bodyHash.slice(0, 12)}.json`;
   return Buffer.byteLength(filename, "utf8") <= 255 ? filename : undefined;
+}
+
+function isReleasedSnapshotFileName(filename: string): boolean {
+  return RELEASED_RECORD_FILE.test(filename);
+}
+
+function assertSnapshotFileIdentity(filename: string, snapshot: Snapshot): void {
+  if (ENVELOPE_RECORD_FILE.test(filename) && filename !== snapshotFileName(snapshot)) {
+    throw snapshotCorrupt("record-identity-mismatch");
+  }
+}
+
+function snapshotDigestForStore(snapshot: Snapshot): string {
+  return snapshotEnvelopeDigest(snapshot, snapshot.sourceId.length > MAX_SOURCE_ID_LENGTH);
 }
 
 function assertExactLookup(reference: SnapshotLookup): void {
@@ -317,7 +333,11 @@ async function ensureCapacityIndex(
   return indexDirectory;
 }
 
-async function readSnapshotFile(file: string, required = false): Promise<Snapshot | undefined> {
+async function readSnapshotFile(
+  file: string,
+  required = false,
+  releasedIdentity = false,
+): Promise<Snapshot | undefined> {
   const text = await readBoundedRegularFile(file, MAX_SNAPSHOT_FILE_BYTES, required);
   if (text === undefined) return undefined;
   let parsed: unknown;
@@ -328,7 +348,7 @@ async function readSnapshotFile(file: string, required = false): Promise<Snapsho
   }
   if (!isSnapshot(parsed)) throw snapshotCorrupt("invalid-record");
   try {
-    return canonicalDurableSnapshot(parsed);
+    return canonicalDurableSnapshot(parsed, releasedIdentity);
   } catch {
     throw snapshotCorrupt("invalid-record");
   }
@@ -376,7 +396,7 @@ function sortSnapshots(snapshots: Snapshot[]): Snapshot[] {
   return snapshots.sort((left, right) =>
     left.fetchedAt === right.fetchedAt
       ? left.bodyHash === right.bodyHash
-        ? compareDescending(snapshotEnvelopeDigest(left), snapshotEnvelopeDigest(right))
+        ? compareDescending(snapshotDigestForStore(left), snapshotDigestForStore(right))
         : compareDescending(left.bodyHash, right.bodyHash)
       : compareDescending(left.fetchedAt, right.fetchedAt),
   );
@@ -428,10 +448,15 @@ async function readAllSnapshots(
   }
   const snapshots = new Map<string, Snapshot>();
   for (const name of records) {
-    const durable = await readSnapshotFile(path.join(directory, name), true);
+    const durable = await readSnapshotFile(
+      path.join(directory, name),
+      true,
+      isReleasedSnapshotFileName(name),
+    );
     if (durable === undefined) throw snapshotStoreFailure("record-disappeared");
     if (durable.sourceId !== sourceId) throw snapshotCorrupt("foreign-source-record");
-    snapshots.set(snapshotEnvelopeDigest(durable), durable);
+    assertSnapshotFileIdentity(name, durable);
+    snapshots.set(snapshotDigestForStore(durable), durable);
   }
   return sortSnapshots([...snapshots.values()]);
 }
@@ -453,7 +478,9 @@ async function persistFilesystemSnapshot(
   await reserveCapacitySlot(capacityIndex, filename, maxHistoryFiles);
   if (!await publishImmutableFile(record, serialized)) {
     const existing = await readSnapshotFile(record, true);
-    if (existing === undefined || snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
+    if (existing === undefined) throw snapshotStoreFailure("record-disappeared");
+    assertSnapshotFileIdentity(filename, existing);
+    if (snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
       throw new Error("immutable snapshot record conflicts with the supplied capture");
     }
   }
@@ -482,6 +509,7 @@ async function findExactFilesystemSnapshot(
     throw snapshotCorrupt("non-regular-entry");
   }
   let filename = snapshotFileNameFromLookup(reference);
+  let indexedRecord = false;
   if (filename === undefined) {
     const index = path.join(directory, "identity-index", `${snapshotIdentityDigest(reference)}.txt`);
     const indexText = await readBoundedRegularFile(index, 512);
@@ -490,14 +518,20 @@ async function findExactFilesystemSnapshot(
       if (filename === undefined) return { kind: "missing" };
     } else {
       filename = indexText.trim();
+      indexedRecord = true;
       if (!/^[0-9A-Za-z._-]+-[a-f0-9]{64}\.json$/.test(filename)) {
         throw snapshotCorrupt("invalid-identity-index");
       }
     }
   }
-  const snapshot = await readSnapshotFile(path.join(directory, filename));
+  const snapshot = await readSnapshotFile(
+    path.join(directory, filename),
+    indexedRecord,
+    reference.snapshotDigest === undefined && isReleasedSnapshotFileName(filename),
+  );
   if (snapshot === undefined) return { kind: "missing" };
   if (snapshot.sourceId !== reference.sourceId) throw snapshotCorrupt("foreign-source-record");
+  assertSnapshotFileIdentity(filename, snapshot);
   return exactLookupMatches(snapshot, reference)
     ? { kind: "found", snapshot }
     : { kind: "mismatch" };
