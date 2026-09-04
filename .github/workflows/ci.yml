@@ -46,3 +46,85 @@ jobs:
       - name: Verify
         run: npm run verify
         working-directory: forage
+
+  # The publish job's environment, exercised on every pull request.
+  #
+  # `npm publish` is the one step of the release path that no ordinary check
+  # reaches: it runs only on a tag, against a tree pnpm installed, under a
+  # `setup-node` that also sets `registry-url` -- a combination the verify jobs
+  # never exercise, and it is that .npmrc which `npm publish` reads.
+  #
+  # It cannot publish: `--dry-run` performs no write, no `id-token` permission
+  # is requested so provenance cannot be minted, and no registry credential is
+  # provided. Proven in kontourai/ui#70.
+  publish-path:
+    name: Publish path (dry run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          path: forage
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: forage/package.json
+      # registry-url is what makes this job differ from the verify jobs: it
+      # writes the .npmrc that `npm publish` reads. Dropping it would leave the
+      # interaction between pnpm's install and npm's publish config untested.
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: pnpm
+          cache-dependency-path: forage/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        working-directory: forage
+      - name: Publish path dry run
+        run: |
+          set -uo pipefail
+          # GitHub runs `run:` blocks as `bash -e {0}`, and `set -uo pipefail`
+          # does NOT clear that -e. A bare `npm publish` would kill the step the
+          # moment npm exits non-zero -- which is every ordinary pull request --
+          # leaving every assertion below unreachable. Capturing the status
+          # marks the failure handled so the assertions actually run.
+          STATUS=0
+          npm publish --dry-run --access public > /tmp/publish-dry-run.log 2>&1 || STATUS=$?
+          cat /tmp/publish-dry-run.log
+
+          if ! grep -q "Tarball Contents" /tmp/publish-dry-run.log; then
+            echo "::error::npm publish --dry-run assembled no tarball; the publish path is unproven." >&2
+            exit 1
+          fi
+          FILES="$(grep -E '^npm notice total files:' /tmp/publish-dry-run.log | grep -oE '[0-9]+$' || echo 0)"
+          if [ "${FILES}" -lt 1 ]; then
+            echo "::error::npm publish --dry-run reported ${FILES} files; expected a non-empty package." >&2
+            exit 1
+          fi
+
+          # `--dry-run` still asks the registry whether the version exists, so
+          # between releases it refuses with exactly this message. That is a
+          # fact about the version, not the package manager, and is the one
+          # failure tolerated. Any OTHER non-zero exit is a real publish-path
+          # failure and is not swallowed.
+          if [ "${STATUS}" -ne 0 ]; then
+            if grep -q "cannot publish over the previously published versions" /tmp/publish-dry-run.log; then
+              echo "Publish path proven from a pnpm-installed tree: ${FILES} files assembled."
+              echo "(Registry declined the version as already published, which is expected between releases.)"
+              exit 0
+            fi
+            echo "::error::npm publish --dry-run failed for a reason other than an already-published version." >&2
+            exit "${STATUS}"
+          fi
+          # Exit zero means npm raised no objection. It does NOT establish that
+          # the version is unpublished: with an unreachable registry --dry-run
+          # also exits zero, so claiming registry state here would assert
+          # something unchecked.
+          echo "Publish path proven from a pnpm-installed tree: ${FILES} files assembled; npm raised no objection."
+        working-directory: forage
