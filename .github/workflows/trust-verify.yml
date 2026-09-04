@@ -45,7 +45,7 @@ jobs:
       # The external anchor: re-run our real verify fresh + reconcile any delivered bundle.
       # SHA-pinned (mutable tags are not trusted for a cross-repo action that gates merges).
       - id: trust-verify
-        uses: kontourai/flow-agents/.github/actions/trust-verify@90b260996e1c4477c56317935f0362d48a8cf8d5 # flow-agents @ publishes structured failure summary (#1120)
+        uses: kontourai/flow-agents/.github/actions/trust-verify@b0adbb4a5defdff0b0d2c7641f1735c06dd121e8 # flow-agents @ publishes structured failure summary (#1120)
         with:
           verify-command: "npm run verify"
   trust-advisory-comment:
