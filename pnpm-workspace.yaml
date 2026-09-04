@@ -1,0 +1,30 @@
+# Dependency install scripts are blocked by default (pnpm >= 10). Only the
+# packages listed here, at exactly these versions, may run a build script.
+# esbuild (via @kontourai/flow-agents): its postinstall selects the platform
+# binary; without it esbuild has no executable to run. Bump the pin with the dep.
+allowBuilds:
+  esbuild@0.28.1: true
+
+# `playwright` is declared as an OPTIONAL peer (peerDependenciesMeta) and npm
+# never installed it — it is absent from the package-lock.json this lockfile was
+# imported from. pnpm's default (auto-install root peers) would pull in
+# playwright + playwright-core + fsevents, changing the dev graph and dragging
+# browser downloads into every install. Keep the graph identical to npm's.
+# The flip side: this also stops pnpm auto-installing @kontourai/relay's
+# non-optional peer @ai-sdk/provider, which npm DID install. It is therefore
+# declared explicitly in devDependencies at the exact version npm resolved
+# (4.0.4), so the installed graph matches package-lock.json entry for entry.
+autoInstallPeers: false
+
+# A newly published version must be at least 24 hours old before it can be
+# resolved into this lockfile. Blunts the most common supply-chain shape (a
+# compromised maintainer publishes and the ecosystem installs within hours).
+# Does not affect installs from an existing lockfile. An urgent security patch
+# is opted in explicitly, by name and version, with the reason in the commit:
+#   minimumReleaseAgeExclude:
+#     - some-package@1.2.3
+minimumReleaseAge: 1440
+
+# mise supplies node and pnpm on developer machines; CI installs the exact
+# version pinned in package.json. Do not reject a same-major pnpm from mise.
+pmOnFail: ignore

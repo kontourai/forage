@@ -59,7 +59,8 @@
         "label": "root manifests",
         "patterns": [
           "package.json",
-          "package-lock.json",
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
           "README.md",
           ".gitignore",
           "AGENTS.md"

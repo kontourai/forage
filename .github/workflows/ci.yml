@@ -26,15 +26,21 @@ jobs:
         with:
           path: forage
 
+      # Reads the exact pnpm version from package.json's packageManager field.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: forage/package.json
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
-          cache-dependency-path: forage/package-lock.json
+          cache: pnpm
+          cache-dependency-path: forage/pnpm-lock.yaml
 
       - name: Install
-        run: npm ci
+        run: pnpm install --frozen-lockfile
         working-directory: forage
 
       - name: Verify
