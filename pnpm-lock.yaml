@@ -9,22 +9,22 @@ importers:
   .:
     devDependencies:
       '@ai-sdk/provider':
-        specifier: 4.0.4
-        version: 4.0.4
+        specifier: 4.0.9
+        version: 4.0.9
       '@kontourai/flow-agents':
         specifier: 5.9.0
-        version: 5.9.0(@ai-sdk/provider@4.0.4)(typescript@7.0.2)
+        version: 5.9.0(@ai-sdk/provider@4.0.9)(typescript@7.0.2)
       '@types/node':
         specifier: ^26.1.1
-        version: 26.1.2
+        version: 26.4.0
       typescript:
         specifier: '>=5.0.0'
         version: 7.0.2
 
 packages:
 
-  '@ai-sdk/provider@4.0.4':
-    resolution: {integrity: sha512-tbHKNLirllUNF3ZlkCsXnwab2ZV1Sl4b1H/Cp9ruCce15IBmskE8Gwkk0yo9xDWY+jho2of7lVXtwSsyrq7cwQ==}
+  '@ai-sdk/provider@4.0.9':
+    resolution: {integrity: sha512-XnGXPWiBIfqjsVEud5pOaVneRByJQOu2sYNwlSVJTPCvakdCDkVuYKKfNuStkIpMUYl7JIkBZGBx+B5YfNeVjA==}
     engines: {node: '>=22'}
 
   '@anthropic-ai/sdk@0.74.0':
@@ -297,8 +297,8 @@ packages:
     resolution: {integrity: sha512-qv7+G3J2cc6wwFj3yKvXOamzqhMwSk1ogPGmhpS8iXllcPrJaIIBA+4HbttlHVu1pqWTdmaCH/WE7UOC51kdoA==}
     engines: {node: ^20.17.0 || >=22.9.0}
 
-  '@types/node@26.1.2':
-    resolution: {integrity: sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg==}
+  '@types/node@26.4.0':
+    resolution: {integrity: sha512-faiGnoIrLH/V8cibOMEAZ8pMw6oXqSukl29ra4mN8GdaB2ZewzeaLj+INpV5N+Z1eKWzY+IzaIZH2EIR6YZRNQ==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -640,7 +640,7 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/provider@4.0.4':
+  '@ai-sdk/provider@4.0.9':
     dependencies:
       json-schema: 0.4.0
 
@@ -735,20 +735,20 @@ snapshots:
 
   '@kontourai/conduit@0.2.1': {}
 
-  '@kontourai/dispatch@0.3.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)':
+  '@kontourai/dispatch@0.3.0(@ai-sdk/provider@4.0.9)(@anthropic-ai/sdk@0.74.0)':
     dependencies:
-      '@kontourai/relay': 0.2.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)
+      '@kontourai/relay': 0.2.0(@ai-sdk/provider@4.0.9)(@anthropic-ai/sdk@0.74.0)
     optionalDependencies:
-      '@ai-sdk/provider': 4.0.4
+      '@ai-sdk/provider': 4.0.9
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
 
-  '@kontourai/flow-agents@5.9.0(@ai-sdk/provider@4.0.4)(typescript@7.0.2)':
+  '@kontourai/flow-agents@5.9.0(@ai-sdk/provider@4.0.9)(typescript@7.0.2)':
     dependencies:
       '@kontourai/conduit': 0.2.1
-      '@kontourai/dispatch': 0.3.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)
+      '@kontourai/dispatch': 0.3.0(@ai-sdk/provider@4.0.9)(@anthropic-ai/sdk@0.74.0)
       '@kontourai/flow': 3.9.0
-      '@kontourai/relay': 0.4.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)
+      '@kontourai/relay': 0.4.0(@ai-sdk/provider@4.0.9)(@anthropic-ai/sdk@0.74.0)
       '@kontourai/survey': 2.0.0(typescript@7.0.2)
       esbuild: 0.28.1
     optionalDependencies:
@@ -772,15 +772,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@kontourai/relay@0.2.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)':
+  '@kontourai/relay@0.2.0(@ai-sdk/provider@4.0.9)(@anthropic-ai/sdk@0.74.0)':
     dependencies:
-      '@ai-sdk/provider': 4.0.4
+      '@ai-sdk/provider': 4.0.9
     optionalDependencies:
       '@anthropic-ai/sdk': 0.74.0
 
-  '@kontourai/relay@0.4.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)':
+  '@kontourai/relay@0.4.0(@ai-sdk/provider@4.0.9)(@anthropic-ai/sdk@0.74.0)':
     dependencies:
-      '@ai-sdk/provider': 4.0.4
+      '@ai-sdk/provider': 4.0.9
     optionalDependencies:
       '@anthropic-ai/sdk': 0.74.0
 
@@ -848,7 +848,7 @@ snapshots:
       '@sigstore/protobuf-specs': 0.5.1
     optional: true
 
-  '@types/node@26.1.2':
+  '@types/node@26.4.0':
     dependencies:
       undici-types: 8.3.0
 
