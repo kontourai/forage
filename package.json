@@ -55,7 +55,7 @@
   },
   "devDependencies": {
     "@ai-sdk/provider": "4.0.4",
-    "@kontourai/flow-agents": "5.9.0",
+    "@kontourai/flow-agents": "6.2.0",
     "@types/node": "^26.1.1",
     "typescript": ">=5.0.0"
   }
