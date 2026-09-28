@@ -165,13 +165,20 @@ store. The in-memory store implements the same rule.
 
 Every `put()` and `prune()` of one source holds a per-source write lock,
 `source.lock` in the source directory, for its critical section; readers never
-take it. The lock records its owner's host, pid, and process start time, and
-the owner refreshes its mtime every 10 seconds. Another process breaks the lock
-when the owner is on the same host and its pid has exited or now belongs to a
-process that started at a different time, or when the lock has not been
-refreshed for 60 seconds (the only rule for an owner on another host). A writer
-waits up to 90 seconds for the lock, then fails with `snapshot-store-error`
-(reason `store-busy`).
+take it. **Every process that writes to a store must run a forage version that
+takes this lock.** A prune removes temporary files and capacity slots that name
+no record, so an older, unlocked writer that is still running can lose data.
+
+The lock records its owner's machine identity (the hostname, plus on Linux the
+boot id and pid namespace), pid, and process start time, and the owner
+refreshes its mtime every 10 seconds. Another process breaks the lock when it
+has not been refreshed for 60 seconds, or when the owner has the same machine
+identity and its pid has exited or now belongs to a process that started at a
+different time. A lock from another machine or pid namespace, or one whose
+identity cannot be read, is judged by age alone. A writer waits up to 90
+seconds for the lock, then fails with `snapshot-store-error` (reason
+`store-busy`). The limits of this scheme (a blocked event loop, clock skew
+between machines, lock-free readers) are listed in `src/source-lock.ts`.
 
 Because no write is in flight while a prune holds the lock, each prune first
 removes everything an interrupted write can leave: temporary files, capacity

@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { fork, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
-import { hostname, tmpdir } from "node:os";
+import { lstat, lutimes, mkdir, mkdtemp, readdir, readFile, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -19,7 +19,13 @@ import {
 } from "../src/index.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "../src/provenance.js";
 import { testOnlySnapshotStoreIo } from "../src/snapshot-store.js";
-import { processStartIdentity, removeIfUnchanged, sourceLockTiming } from "../src/source-lock.js";
+import {
+  processStartIdentity,
+  readLockFileState,
+  removeIfUnchanged,
+  sourceLockTiming,
+  testOnlySourceLockIo,
+} from "../src/source-lock.js";
 import { storeViolations } from "./support/store-invariants.js";
 
 const SOURCE = "retention-source";
@@ -394,97 +400,281 @@ describe("source lock: puts and prunes", () => {
   });
 });
 
-describe("source lock: stale owners", () => {
-  async function storeWithRecords(root: string) {
-    const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 4 });
-    for (let index = 0; index < 3; index += 1) await store.put(capture(index));
-    return { store, directory: await sourceDirectory(root) };
-  }
+const MACHINE = "test-machine|boot:0000|pid:[4026531836]";
 
+/** Run with this process's machine identity replaced (undefined: unreadable). */
+async function withMachine<T>(machine: string | undefined, run: () => Promise<T>): Promise<T> {
+  testOnlySourceLockIo.machineIdentity = async () => machine;
+  try {
+    return await run();
+  } finally {
+    testOnlySourceLockIo.machineIdentity = undefined;
+  }
+}
+
+async function liveOwner(machine = MACHINE): Promise<object> {
+  return { machine, pid: process.pid, start: await processStartIdentity(process.pid) ?? null, token: randomUUID() };
+}
+
+function deadOwner(machine: string | null = MACHINE): object {
+  return { machine, pid: exitedPid(), start: null, token: randomUUID() };
+}
+
+async function storeWithRecords(root: string) {
+  const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 4 });
+  for (let index = 0; index < 3; index += 1) await store.put(capture(index));
+  return { store, directory: await sourceDirectory(root) };
+}
+
+async function assertBusyWithinWait(operation: Promise<unknown>): Promise<void> {
+  const started = Date.now();
+  await assert.rejects(operation, { reason: "store-busy" });
+  assert.ok(Date.now() - started < sourceLockTiming.waitMs + 3_000, "gave up near its deadline");
+}
+
+describe("source lock: stale owners", () => {
   it("breaks a lock whose owner process has exited", async () => {
     // A wait shorter than the stale ceiling: only the owner's exit can free the lock.
-    await withLockTiming({ waitMs: 2_000 }, async () => {
-      await withRoot(async (root) => {
-        const { store, directory } = await storeWithRecords(root);
-        await writeLock(directory, { host: hostname(), pid: exitedPid(), start: null, token: randomUUID() });
-        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
-      });
-    });
+    await withLockTiming({ waitMs: 2_000 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      await writeLock(directory, deadOwner());
+      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    })));
   });
 
   it("breaks a lock whose pid now belongs to a different process", async () => {
     // The pid is alive (it is this test's own), but it started at another time.
-    await withLockTiming({ waitMs: 2_000 }, async () => {
-      await withRoot(async (root) => {
-        const { store, directory } = await storeWithRecords(root);
-        assert.ok(await processStartIdentity(process.pid), "precondition: this platform reports process start times");
-        await writeLock(directory, { host: hostname(), pid: process.pid, start: "ps-lstart:Thu Jan 1 00:00:00 1970", token: randomUUID() });
-        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
-      });
-    });
+    await withLockTiming({ waitMs: 2_000 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      assert.ok(await processStartIdentity(process.pid), "precondition: this platform reports process start times");
+      await writeLock(directory, { machine: MACHINE, pid: process.pid, start: "ps-lstart:Thu Jan 1 00:00:00 1970", token: randomUUID() });
+      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    })));
   });
 
-  it("waits for a live owner, and for another host's owner until the lock ages past the ceiling", async () => {
-    await withLockTiming({ waitMs: 300 }, async () => {
-      await withRoot(async (root) => {
-        const { store, directory } = await storeWithRecords(root);
-        const live = await writeLock(directory, { host: hostname(), pid: process.pid, start: await processStartIdentity(process.pid) ?? null, token: randomUUID() });
-        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
-        await unlink(live);
+  it("judges a lock from another pid namespace, or an unknown machine, by age alone", async () => {
+    // Same hostname, different pid namespace: the recorded pid is alive here
+    // but names a different process, which must not make a live lock stale.
+    await withLockTiming({ waitMs: 300 }, () => withRoot(async (root) => {
+      const { store, directory } = await withMachine(MACHINE, () => storeWithRecords(root));
+      const otherNamespace = { machine: MACHINE.replace("4026531836", "4026532999"), pid: process.pid, start: "ps-lstart:Thu Jan 1 00:00:00 1970", token: randomUUID() };
+      await writeLock(directory, otherNamespace);
+      await withMachine(MACHINE, () => assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 })));
+      await writeLock(directory, deadOwner(null));
+      await withMachine(MACHINE, () => assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 })));
+      await writeLock(directory, deadOwner());
+      await withMachine(undefined, () => assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 })));
+      await writeLock(directory, otherNamespace, sourceLockTiming.staleMs + 1_000);
+      assert.deepEqual(await withMachine(MACHINE, () => store.prune(SOURCE, { keepLast: 1 })), { removed: 2, retained: 1 });
+    }));
+  });
 
-        const foreign = { host: `not-${hostname()}`, pid: exitedPid(), start: null, token: randomUUID() };
-        await writeLock(directory, foreign);
-        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
-        await writeLock(directory, foreign, sourceLockTiming.staleMs + 1_000);
-        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
-      });
-    });
+  it("waits for a live owner, and for another machine's owner until the lock ages past the ceiling", async () => {
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const live = await writeLock(directory, await liveOwner());
+      await assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 }));
+      await unlink(live);
+
+      const foreign = deadOwner("host:another-machine");
+      await writeLock(directory, foreign);
+      await assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 }));
+      await writeLock(directory, foreign, sourceLockTiming.staleMs + 1_000);
+      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    })));
+  });
+
+  it("looks up a live owner's start time once per lock while waiting", async () => {
+    await withLockTiming({ waitMs: 500 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      await writeLock(directory, await liveOwner());
+      let lookups = 0;
+      testOnlySourceLockIo.onStartLookup = () => { lookups += 1; };
+      try {
+        await assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 }));
+      } finally {
+        testOnlySourceLockIo.onStartLookup = undefined;
+      }
+      assert.ok(lookups <= 1, `${lookups} start-time lookups`);
+    })));
   });
 
   it("an empty lock or break marker left by a writer that died is removed once past the ceiling", async () => {
-    await withLockTiming({ waitMs: 300 }, async () => {
-      await withRoot(async (root) => {
-        const { store, directory } = await storeWithRecords(root);
-        await writeLock(directory, "");
-        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
-        await writeLock(directory, "", sourceLockTiming.staleMs + 1_000);
-        const marker = path.join(directory, "source.lock.break");
-        await writeFile(marker, "");
-        const then = new Date(Date.now() - sourceLockTiming.staleMs - 1_000);
-        await utimes(marker, then, then);
-        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
-      });
-    });
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      await writeLock(directory, "");
+      await assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 }));
+      await writeLock(directory, "", sourceLockTiming.staleMs + 1_000);
+      const marker = path.join(directory, "source.lock.break");
+      await writeFile(marker, "");
+      const then = new Date(Date.now() - sourceLockTiming.staleMs - 1_000);
+      await utimes(marker, then, then);
+      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    })));
   });
 
   it("gives up within the wait when a live breaker holds the marker of a stale lock", async () => {
-    await withLockTiming({ waitMs: 300 }, async () => {
-      await withRoot(async (root) => {
-        const { store, directory } = await storeWithRecords(root);
-        await writeLock(directory, { host: hostname(), pid: exitedPid(), start: null, token: randomUUID() });
-        await writeFile(path.join(directory, "source.lock.break"), JSON.stringify({
-          host: hostname(), pid: process.pid, start: await processStartIdentity(process.pid) ?? null, token: randomUUID(),
-        }));
-        const started = Date.now();
-        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
-        assert.ok(Date.now() - started < 5_000);
-      });
-    });
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      await writeLock(directory, deadOwner());
+      await writeFile(path.join(directory, "source.lock.break"), JSON.stringify(await liveOwner()));
+      await assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 }));
+    })));
   });
 
-  it("removes a stale file only if it still holds the contents judged stale", async () => {
+  it("an oversized lock is judged by age, and a fresh one never makes a writer overrun its wait", async () => {
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      await writeLock(directory, "x".repeat(5_000));
+      await assertBusyWithinWait(store.put(capture(3)));
+      await writeLock(directory, "x".repeat(5_000), sourceLockTiming.staleMs + 1_000);
+      const started = Date.now();
+      await store.put(capture(3));
+      assert.ok(Date.now() - started < sourceLockTiming.waitMs + 3_000);
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    })));
+  });
+
+  it("a symlink at the lock path is judged by age and removed without following it", async () => {
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const target = path.join(root, "symlink-target");
+      await writeFile(target, "must survive");
+      const lock = path.join(directory, "source.lock");
+      await symlink(target, lock);
+      await assertBusyWithinWait(store.put(capture(3)));
+      const then = new Date(Date.now() - sourceLockTiming.staleMs - 1_000);
+      await lutimes(lock, then, then);
+      await store.put(capture(3));
+      assert.equal(await readFile(target, "utf8"), "must survive");
+      await unlink(target);
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    })));
+  });
+
+  it("a directory at the lock path is never removed, and writers give up at their deadline", async () => {
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const lock = path.join(directory, "source.lock");
+      await mkdir(lock);
+      const then = new Date(Date.now() - sourceLockTiming.staleMs - 1_000);
+      await utimes(lock, then, then);
+      await assertBusyWithinWait(store.put(capture(3)));
+      assert.ok((await lstat(lock)).isDirectory());
+    })));
+  });
+
+  it("removes a stale file only if it is still the file judged stale", async () => {
     await withRoot(async (root) => {
-      const marker = path.join(root, "source.lock.break");
-      await writeFile(marker, "a fresh marker written after the stale one was judged");
-      await removeIfUnchanged(marker, "the stale marker");
-      assert.equal(await readFile(marker, "utf8"), "a fresh marker written after the stale one was judged");
-      await removeIfUnchanged(marker, "a fresh marker written after the stale one was judged");
+      const file = path.join(root, "source.lock.break");
+      await writeFile(file, "the stale marker");
+      const judged = (await readLockFileState(file))!;
+      await unlink(file);
+      await writeFile(file, "a fresh marker written after the stale one was judged");
+      assert.equal(await removeIfUnchanged(file, judged), false);
+      assert.equal(await readFile(file, "utf8"), "a fresh marker written after the stale one was judged");
+      assert.equal(await removeIfUnchanged(file, (await readLockFileState(file))!), true);
       assert.deepEqual(await readdir(root), []);
     });
+  });
+});
+
+describe("source lock: compare before remove, at each call site", () => {
+  it("a breaker does not remove a lock replaced after it was judged stale", async () => {
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const lock = await writeLock(directory, deadOwner());
+      const replacement = JSON.stringify(await liveOwner());
+      let replaced = false;
+      testOnlySourceLockIo.afterStaleJudgement = async () => {
+        if (replaced) return;
+        replaced = true;
+        await unlink(lock);
+        await writeFile(lock, replacement);
+      };
+      try {
+        await assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 }));
+      } finally {
+        testOnlySourceLockIo.afterStaleJudgement = undefined;
+      }
+      assert.ok(replaced, "precondition: the lock was replaced between judgement and removal");
+      assert.equal(await readFile(lock, "utf8"), replacement);
+    })));
+  });
+
+  it("release leaves alone a lock that another owner took after this one was broken", async () => {
+    await withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const lock = path.join(directory, "source.lock");
+      const other = JSON.stringify(await liveOwner());
+      testOnlySnapshotStoreIo.insideSourceLock = async (operation) => {
+        if (operation !== "put") return;
+        await unlink(lock);
+        await writeFile(lock, other);
+      };
+      try {
+        await store.put(capture(3));
+      } finally {
+        testOnlySnapshotStoreIo.insideSourceLock = undefined;
+      }
+      assert.equal(await readFile(lock, "utf8"), other);
+    }));
+  });
+
+  it("the heartbeat refreshes only its own lock", async () => {
+    await withLockTiming({ heartbeatMs: 20 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const lock = path.join(directory, "source.lock");
+      const other = JSON.stringify(await liveOwner());
+      const tenSecondsAgo = new Date(Date.now() - 10_000);
+      testOnlySnapshotStoreIo.insideSourceLock = async (operation) => {
+        if (operation !== "put") return;
+        await unlink(lock);
+        await writeFile(lock, other);
+        await utimes(lock, tenSecondsAgo, tenSecondsAgo);
+        await sleep(200);
+      };
+      try {
+        await store.put(capture(3));
+      } finally {
+        testOnlySnapshotStoreIo.insideSourceLock = undefined;
+      }
+      assert.ok(Date.now() - (await lstat(lock)).mtimeMs > 9_000, "another owner's lock was refreshed");
+    })));
+  });
+
+  it("a lock or marker whose write fails is removed, not left behind", async () => {
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const failOnce = (name: string) => {
+        let failed = false;
+        testOnlySourceLockIo.beforeExclusiveWrite = (file) => {
+          if (!failed && path.basename(file) === name) {
+            failed = true;
+            throw Object.assign(new Error("no space left on device"), { code: "ENOSPC" });
+          }
+        };
+      };
+      try {
+        failOnce("source.lock");
+        await assert.rejects(store.put(capture(3)), { code: "ENOSPC" });
+        assert.equal((await readdir(directory)).includes("source.lock"), false);
+        await store.put(capture(3));
+
+        await writeLock(directory, deadOwner());
+        failOnce("source.lock.break");
+        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { code: "ENOSPC" });
+        assert.equal((await readdir(directory)).includes("source.lock.break"), false);
+      } finally {
+        testOnlySourceLockIo.beforeExclusiveWrite = undefined;
+      }
+      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 3, retained: 1 });
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    })));
   });
 });
 
