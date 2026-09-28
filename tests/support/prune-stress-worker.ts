@@ -24,8 +24,14 @@ process.on("message", async (message: { round: number }) => {
   for (let step = 0; step < 3; step += 1) {
     try {
       if (role === "put") await store.put(capture(message.round * 100 + Number(id) * 10 + step));
-      else if (role === "prune") await store.prune(sourceId, { keepLast: 1 + (Number(id) % 2) });
-      else await store.latest(sourceId);
+      // Re-puts of the previous round's first put captures, which a prune
+      // has often just removed or is about to remove.
+      else if (role === "reput") await store.put(capture((message.round - 1) * 100 + 10 + step));
+      else if (role === "prune") await store.prune(sourceId, { keepLast: Number(id) % 2 === 1 ? 1 : Number(cap) - 1 });
+      else if (role === "list") {
+        const history = await store.list(sourceId);
+        if (history.length > 0) await store.get(sourceId, history[history.length - 1]!.bodyHash);
+      } else await store.latest(sourceId);
     } catch (error) {
       const failure = error as { name?: string; code?: string; reason?: string; message?: string };
       const where = (error as Error).stack?.split("\n").slice(1, 4).map((line) => line.trim()).join(" < ") ?? "";

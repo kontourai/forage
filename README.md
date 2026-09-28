@@ -163,14 +163,21 @@ the other records with their identity-index entries and capacity slots, so a
 pruned store verifies cleanly and `put()` succeeds again after pruning a full
 store. The in-memory store implements the same rule.
 
-Prunes of one source are serialized across processes by a `prune.lock` file
-in the source directory; puts never wait for it. A prune waits up to 30
-seconds for the lock, then fails with `snapshot-store-error` (reason
-`store-busy`). A lock left by a process on the same host that has exited is
-taken over. Each prune first cleans up after interrupted operations: it
-removes temporary files whose writing process has exited (after a minute) and
-identity entries that name no record, and it gives a retained record back a
-missing identity entry or capacity slot.
+Every `put()` and `prune()` of one source holds a per-source write lock,
+`source.lock` in the source directory, for its critical section; readers never
+take it. The lock records its owner's host, pid, and process start time, and
+the owner refreshes its mtime every 10 seconds. Another process breaks the lock
+when the owner is on the same host and its pid has exited or now belongs to a
+process that started at a different time, or when the lock has not been
+refreshed for 60 seconds (the only rule for an owner on another host). A writer
+waits up to 90 seconds for the lock, then fails with `snapshot-store-error`
+(reason `store-busy`).
+
+Because no write is in flight while a prune holds the lock, each prune first
+removes everything an interrupted write can leave: temporary files, capacity
+slots and identity entries that name no record, and markers of lock breakers
+that died. It also gives a retained record back a missing identity entry or
+capacity slot.
 
 `latest()` picks the head from record filenames and reads only the head's
 record, so its cost does not grow with history length. It does so when every

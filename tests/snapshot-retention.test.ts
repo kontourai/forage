@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync, fork } from "node:child_process";
+import { fork, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, unlink, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
@@ -19,6 +19,7 @@ import {
 } from "../src/index.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "../src/provenance.js";
 import { testOnlySnapshotStoreIo } from "../src/snapshot-store.js";
+import { processStartIdentity, removeIfUnchanged, sourceLockTiming } from "../src/source-lock.js";
 import { storeViolations } from "./support/store-invariants.js";
 
 const SOURCE = "retention-source";
@@ -228,44 +229,6 @@ describe("prune()", () => {
     });
   });
 
-  it("a put reclaims a slot that a prune freed after the put's claim failed", async () => {
-    // The victim occupies the new record's first probe slot. The put's claim
-    // fails, the put stats the slot to read its owner, and a prune frees the
-    // slot before the put opens it.
-    const maxHistoryFiles = 4;
-    const victim = capture(0);
-    const head = capture(1);
-    let incoming = capture(2);
-    for (let index = 3; startSlot(incoming, maxHistoryFiles) !== startSlot(victim, maxHistoryFiles); index += 1) {
-      incoming = capture(index);
-    }
-    assert.equal(startSlot(incoming, maxHistoryFiles), startSlot(victim, maxHistoryFiles), "precondition: the put probes the victim's slot first");
-    const slotFile = `${path.sep}capacity-index${path.sep}${startSlot(victim, maxHistoryFiles)}.txt`;
-    await withRoot(async (root) => {
-      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles });
-      await store.put(victim);
-      await store.put(head);
-      let armed = false;
-      let pruned = false;
-      testOnlySnapshotStoreIo.afterSlotClaimConflict = () => { if (!pruned) armed = true; };
-      testOnlySnapshotStoreIo.afterEntryStat = async (file) => {
-        if (!armed || !file.endsWith(slotFile)) return;
-        armed = false;
-        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 1, retained: 1 });
-        pruned = true;
-      };
-      try {
-        await store.put(incoming);
-      } finally {
-        testOnlySnapshotStoreIo.afterSlotClaimConflict = undefined;
-        testOnlySnapshotStoreIo.afterEntryStat = undefined;
-      }
-      assert.ok(pruned, "precondition: the slot was freed between the put's stat and open");
-      assert.deepEqual((await store.list(SOURCE)).map((snapshot) => snapshot.body), [incoming.body, "capture 1"]);
-      assert.equal((await store.readVerifiedHead(SOURCE)).kind, "found");
-    });
-  });
-
   it("rejects a retention rule without an explicit keepLast", async () => {
     await withRoot(async (root) => {
       const store = createFilesystemSnapshotStore({ root });
@@ -289,12 +252,76 @@ async function sourceDirectory(root: string): Promise<string> {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-describe("prune() concurrency and recovery", () => {
+async function withLockTiming<T>(timing: Partial<typeof sourceLockTiming>, run: () => Promise<T>): Promise<T> {
+  const saved = { ...sourceLockTiming };
+  Object.assign(sourceLockTiming, timing);
+  try {
+    return await run();
+  } finally {
+    Object.assign(sourceLockTiming, saved);
+  }
+}
+
+async function writeLock(directory: string, owner: object | string, ageMs = 0): Promise<string> {
+  const file = path.join(directory, "source.lock");
+  await writeFile(file, typeof owner === "string" ? owner : JSON.stringify(owner));
+  if (ageMs > 0) {
+    const then = new Date(Date.now() - ageMs);
+    await utimes(file, then, then);
+  }
+  return file;
+}
+
+/** Whether `pending` settles within `ms`. */
+async function settlesWithin(pending: Promise<unknown>, ms: number): Promise<boolean> {
+  return Promise.race([pending.then(() => true, () => true), sleep(ms).then(() => false)]);
+}
+
+describe("source lock: puts and prunes", () => {
+  it("a re-put and a prune of the same record cannot interleave", async () => {
+    // The re-put finds its record present and so reserves no slot. Were a
+    // prune to remove the record and its slot before the re-put republished
+    // it, the record would be left without a slot: at the cap, a store that
+    // fails every later read and write.
+    const cap = 2;
+    await withRoot(async (root) => {
+      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: cap });
+      await store.put(capture(0));
+      await store.put(capture(1));
+      const inPut = gate();
+      const resumePut = gate();
+      let pruneRanDuringPut = false;
+      let putPaused = false;
+      let resumeOpened = false;
+      testOnlySnapshotStoreIo.insideSourceLock = async (operation) => {
+        if (operation === "put" && !putPaused) {
+          putPaused = true;
+          inPut.open();
+          await resumePut.wait;
+        } else if (operation === "prune" && putPaused && !resumeOpened) {
+          pruneRanDuringPut = true;
+        }
+      };
+      try {
+        const reput = store.put(capture(0));
+        await inPut.wait;
+        const prune = store.prune(SOURCE, { keepLast: 1 });
+        assert.equal(await settlesWithin(prune, 200), false, "the prune waits for the put");
+        resumeOpened = true;
+        resumePut.open();
+        await reput;
+        assert.deepEqual(await prune, { removed: 1, retained: 1 });
+      } finally {
+        testOnlySnapshotStoreIo.insideSourceLock = undefined;
+      }
+      assert.equal(pruneRanDuringPut, false);
+      assert.deepEqual(await storeViolations(root, SOURCE, cap, store), []);
+      await store.put(capture(2));
+      assert.deepEqual(await storeViolations(root, SOURCE, cap, store), []);
+    });
+  });
+
   it("serializes prunes, so a full store cannot be wedged by a prune scanning stale slots", async () => {
-    // At cap 2, prune A scans (victim: capture 0) and pauses. Unserialized,
-    // prune B would remove the victim, a put would take its freed slot, and A
-    // would then free that slot by its stale name: three records under cap 2
-    // and a store that refuses every later put and prune.
     const cap = 2;
     await withRoot(async (root) => {
       const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: cap });
@@ -314,99 +341,165 @@ describe("prune() concurrency and recovery", () => {
         const pruneA = store.prune(SOURCE, { keepLast: 1 });
         await aScanned.wait;
         const pruneB = store.prune(SOURCE, { keepLast: 1 });
-        // B cannot finish, or even scan, while A holds the lock.
-        const bFinishedWhileAHeldTheLock = await Promise.race([pruneB.then(() => true), sleep(200).then(() => false)]);
-        assert.equal(bFinishedWhileAHeldTheLock, false);
+        const putWhileAHolds = store.put(capture(2));
+        assert.equal(await settlesWithin(pruneB, 200), false);
+        assert.equal(await settlesWithin(putWhileAHolds, 0), false);
         assert.equal(scans, 1);
-        const putWhileFull = await store.put(capture(2)).then(() => "stored", (error: unknown) =>
-          isSnapshotHistoryFullError(error) ? "history-full" : String(error));
         resumeA.open();
         assert.deepEqual(await pruneA, { removed: 1, retained: 1 });
-        await pruneB;
-        if (putWhileFull === "history-full") await store.put(capture(2));
+        await Promise.all([pruneB, putWhileAHolds.catch((error: unknown) => {
+          if (!isSnapshotHistoryFullError(error)) throw error;
+        })]);
       } finally {
         testOnlySnapshotStoreIo.afterPruneScan = undefined;
       }
       assert.deepEqual(await storeViolations(root, SOURCE, cap, store), []);
+    });
+  });
+
+  it("a holder's heartbeat keeps a long critical section from being broken by age", async () => {
+    await withLockTiming({ staleMs: 300, heartbeatMs: 50, waitMs: 5_000 }, async () => {
+      await withRoot(async (root) => {
+        const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 8 });
+        await store.put(capture(0));
+        const inPut = gate();
+        const resumePut = gate();
+        let holding = false;
+        let overlapped = false;
+        testOnlySnapshotStoreIo.insideSourceLock = async (operation) => {
+          if (operation === "prune" && holding) overlapped = true;
+          if (operation === "put") {
+            holding = true;
+            inPut.open();
+            await resumePut.wait;
+            holding = false;
+          }
+        };
+        try {
+          const put = store.put(capture(1));
+          await inPut.wait;
+          const prune = store.prune(SOURCE, { keepLast: 1 });
+          // Three times the stale ceiling: only the heartbeat keeps the lock fresh.
+          assert.equal(await settlesWithin(prune, 900), false);
+          resumePut.open();
+          await put;
+          await prune;
+        } finally {
+          testOnlySnapshotStoreIo.insideSourceLock = undefined;
+        }
+        assert.equal(overlapped, false);
+        assert.deepEqual(await storeViolations(root, SOURCE, 8, store), []);
+      });
+    });
+  });
+});
+
+describe("source lock: stale owners", () => {
+  async function storeWithRecords(root: string) {
+    const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 4 });
+    for (let index = 0; index < 3; index += 1) await store.put(capture(index));
+    return { store, directory: await sourceDirectory(root) };
+  }
+
+  it("breaks a lock whose owner process has exited", async () => {
+    await withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      await writeLock(directory, { host: hostname(), pid: exitedPid(), start: null, token: randomUUID() });
+      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    });
+  });
+
+  it("breaks a lock whose pid now belongs to a different process", async () => {
+    // The pid is alive (it is this test's own), but it started at another time.
+    await withLockTiming({ waitMs: 2_000 }, async () => {
+      await withRoot(async (root) => {
+        const { store, directory } = await storeWithRecords(root);
+        assert.ok(await processStartIdentity(process.pid), "precondition: this platform reports process start times");
+        await writeLock(directory, { host: hostname(), pid: process.pid, start: "ps-lstart:Thu Jan 1 00:00:00 1970", token: randomUUID() });
+        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      });
+    });
+  });
+
+  it("waits for a live owner, and for another host's owner until the lock ages past the ceiling", async () => {
+    await withLockTiming({ waitMs: 300 }, async () => {
+      await withRoot(async (root) => {
+        const { store, directory } = await storeWithRecords(root);
+        const live = await writeLock(directory, { host: hostname(), pid: process.pid, start: await processStartIdentity(process.pid) ?? null, token: randomUUID() });
+        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
+        await unlink(live);
+
+        const foreign = { host: `not-${hostname()}`, pid: exitedPid(), start: null, token: randomUUID() };
+        await writeLock(directory, foreign);
+        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
+        await writeLock(directory, foreign, sourceLockTiming.staleMs + 1_000);
+        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      });
+    });
+  });
+
+  it("an empty lock or break marker left by a writer that died is removed once past the ceiling", async () => {
+    await withLockTiming({ waitMs: 300 }, async () => {
+      await withRoot(async (root) => {
+        const { store, directory } = await storeWithRecords(root);
+        await writeLock(directory, "");
+        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
+        await writeLock(directory, "", sourceLockTiming.staleMs + 1_000);
+        const marker = path.join(directory, "source.lock.break");
+        await writeFile(marker, "");
+        const then = new Date(Date.now() - sourceLockTiming.staleMs - 1_000);
+        await utimes(marker, then, then);
+        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      });
+    });
+  });
+
+  it("removes a stale file only if it still holds the contents judged stale", async () => {
+    await withRoot(async (root) => {
+      const marker = path.join(root, "source.lock.break");
+      await writeFile(marker, "a fresh marker written after the stale one was judged");
+      await removeIfUnchanged(marker, "the stale marker");
+      assert.equal(await readFile(marker, "utf8"), "a fresh marker written after the stale one was judged");
+      await removeIfUnchanged(marker, "a fresh marker written after the stale one was judged");
+      assert.deepEqual(await readdir(root), []);
+    });
+  });
+});
+
+describe("prune() recovery", () => {
+  it("removes a slot left by a put killed before it published its record", async () => {
+    // At cap 2 the orphan slot would otherwise keep the store full for good.
+    const cap = 2;
+    await withRoot(async (root) => {
+      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: cap });
+      await store.put(capture(0));
+      const capacityIndex = path.join(await sourceDirectory(root), "capacity-index");
+      const used = new Set(await readdir(capacityIndex));
+      const free = ["0.txt", "1.txt"].find((slot) => !used.has(slot))!;
+      await writeFile(path.join(capacityIndex, free), recordFileName(capture(1)));
+      await assert.rejects(store.put(capture(2)), (error: unknown) => isSnapshotHistoryFullError(error));
       await store.prune(SOURCE, { keepLast: 1 });
-      await store.put(capture(3));
+      await store.put(capture(2));
       assert.deepEqual(await storeViolations(root, SOURCE, cap, store), []);
     });
   });
 
-  it("recovers from a prune that exited while holding the lock", async () => {
+  it("removes temporary files that interrupted writes left behind", async () => {
     await withRoot(async (root) => {
       const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 4 });
       for (let index = 0; index < 3; index += 1) await store.put(capture(index));
       const directory = await sourceDirectory(root);
-      await writeFile(path.join(directory, "prune.lock"), JSON.stringify({ host: hostname(), pid: exitedPid(), token: randomUUID() }));
-      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
-    });
-  });
-
-  it("recovers when the process that was breaking a stale lock also exited", async () => {
-    await withRoot(async (root) => {
-      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 4 });
-      for (let index = 0; index < 3; index += 1) await store.put(capture(index));
-      const directory = await sourceDirectory(root);
-      await writeFile(path.join(directory, "prune.lock"), JSON.stringify({ host: hostname(), pid: exitedPid(), token: randomUUID() }));
-      await writeFile(path.join(directory, "prune.lock.steal"), JSON.stringify({ host: hostname(), pid: exitedPid() }));
-      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
-    });
-  });
-
-  it("removes temporary files left by exited writers and keeps those of live writers", async () => {
-    await withRoot(async (root) => {
-      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 4 });
-      for (let index = 0; index < 3; index += 1) await store.put(capture(index));
-      const directory = await sourceDirectory(root);
-      const dead = exitedPid();
-      const old = new Date(Date.now() - 5 * 60_000);
-      const leftovers = [
-        path.join(directory, `x.json.${dead}.${randomUUID()}.tmp`),
-        path.join(directory, "capacity-index", `1.txt.${dead}.${randomUUID()}.tmp`),
-        path.join(directory, "identity-index", `${"a".repeat(64)}.txt.${dead}.${randomUUID()}.tmp`),
-      ];
-      for (const file of leftovers) {
-        await writeFile(file, "partial");
-        await utimes(file, old, old);
-      }
-      const live = path.join(directory, "capacity-index", `2.txt.${process.pid}.${randomUUID()}.tmp`);
-      await writeFile(live, "in flight");
-      await utimes(live, old, old);
-
+      for (const file of [
+        path.join(directory, `x.json.${process.pid}.${randomUUID()}.tmp`),
+        path.join(directory, "capacity-index", `1.txt.${exitedPid()}.${randomUUID()}.tmp`),
+        path.join(directory, "identity-index", `${"a".repeat(64)}.txt.${process.pid}.${randomUUID()}.tmp`),
+      ]) await writeFile(file, "partial");
       await store.prune(SOURCE, { keepLast: 1 });
-      const remaining = [
-        ...await readdir(directory),
-        ...await readdir(path.join(directory, "capacity-index")),
-        ...await readdir(path.join(directory, "identity-index")),
-      ].filter((name) => name.endsWith(".tmp"));
-      assert.deepEqual(remaining, [path.basename(live)]);
-      await unlink(live);
       assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
-    });
-  });
-
-  it("a put pruned between publishing its record and its identity entry leaves no orphan entry", async () => {
-    await withRoot(async (root) => {
-      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: 8 });
-      await store.put(capture(10));
-      let pruned = false;
-      testOnlySnapshotStoreIo.beforePutIdentity = async () => {
-        if (pruned) return;
-        pruned = true;
-        // The put's record (capture 1) is older than the head, so it is a victim.
-        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 1, retained: 1 });
-      };
-      try {
-        await store.put(capture(1));
-      } finally {
-        testOnlySnapshotStoreIo.beforePutIdentity = undefined;
-      }
-      assert.ok(pruned, "precondition: the prune ran inside the put");
-      assert.deepEqual(await storeViolations(root, SOURCE, 8, store), []);
     });
   });
 
@@ -416,64 +509,90 @@ describe("prune() concurrency and recovery", () => {
       for (let index = 0; index < 3; index += 1) await store.put(capture(index));
       const directory = await sourceDirectory(root);
       await writeFile(path.join(directory, "identity-index", `${"b".repeat(64)}.txt`), recordFileName(capture(99)));
-      // Remove the identity entry of a real record (capture 1).
       const identityNames = await readdir(path.join(directory, "identity-index"));
       const targets = await Promise.all(identityNames.map((name) => readFile(path.join(directory, "identity-index", name), "utf8")));
       const realEntry = identityNames[targets.findIndex((target) => target.trim() === recordFileName(capture(1)))];
       assert.ok(realEntry, "precondition: capture 1 has an identity entry");
       await unlink(path.join(directory, "identity-index", realEntry));
-      const [someSlot] = (await readdir(path.join(directory, "capacity-index"))).filter((name) => /^\d+\.txt$/.test(name));
-      await unlink(path.join(directory, "capacity-index", someSlot!));
+      const capacityIndex = path.join(directory, "capacity-index");
+      const slotNames = (await readdir(capacityIndex)).filter((name) => /^\d+\.txt$/.test(name));
+      const owners = await Promise.all(slotNames.map((name) => readFile(path.join(capacityIndex, name), "utf8")));
+      await unlink(path.join(capacityIndex, slotNames[owners.indexOf(recordFileName(capture(2)))]!));
       assert.notDeepEqual(await storeViolations(root, SOURCE, 8, store), []);
 
       assert.deepEqual(await store.prune(SOURCE, { keepLast: 10 }), { removed: 0, retained: 3 });
       assert.deepEqual(await storeViolations(root, SOURCE, 8, store), []);
     });
   });
+});
 
-  it("does not count in-flight temporary files toward the capacity-index read limit", async () => {
-    await withRoot(async (root) => {
-      const cap = 2;
-      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: cap });
-      await store.put(capture(0));
-      await store.put(capture(1));
-      const capacityIndex = path.join(await sourceDirectory(root), "capacity-index");
-      const inFlight = [0, 1, 2].map((slot) => path.join(capacityIndex, `${slot}.txt.${process.pid}.${randomUUID()}.tmp`));
-      for (const file of inFlight) await writeFile(file, "in flight");
-      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 1, retained: 1 });
-      for (const file of inFlight) await unlink(file);
-      assert.deepEqual(await storeViolations(root, SOURCE, cap, store), []);
-    });
-  });
+interface StressWorker {
+  child: ChildProcess;
+  role: string;
+  id: number;
+}
 
-  it("keeps every invariant under concurrent puts, prunes, and reads from separate processes", async () => {
-    const rounds = Number(process.env.FORAGE_PRUNE_STRESS_ROUNDS ?? 25);
-    const cap = 4;
-    await withRoot(async (root) => {
-      const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: cap });
-      await store.put(capture(0));
-      const worker = new URL("./support/prune-stress-worker.js", import.meta.url).pathname;
-      const roles: [string, number][] = [["put", 1], ["put", 2], ["put", 3], ["prune", 1], ["prune", 2], ["latest", 1]];
-      const children = roles.map(([role, id]) => fork(worker, [root, role, String(id), String(cap), SOURCE], { stdio: "ignore" }));
-      try {
-        await Promise.all(children.map((child) => new Promise((resolve) => child.once("message", resolve))));
-        const unexpected: string[] = [];
-        for (let round = 1; round <= rounds; round += 1) {
-          const results = await Promise.all(children.map((child) => new Promise<{ errors: string[] }>((resolve) => {
-            child.once("message", (message) => resolve(message as { errors: string[] }));
-            child.send({ round });
-          })));
-          // A put may find the store full; nothing else may fail.
-          for (const { errors } of results) {
-            unexpected.push(...errors.filter((error) => !error.startsWith("put:SnapshotHistoryFullError:")));
-          }
-          const violations = await storeViolations(root, SOURCE, cap, store);
-          assert.deepEqual(violations, [], `round ${round}`);
+/**
+ * Cross-process stress: puts (new and re-puts of earlier captures), prunes,
+ * and readers in separate processes, with some workers killed with SIGKILL
+ * mid-round. After each round a recovery prune runs and every invariant must
+ * hold. Readers may see a record vanish under a concurrent prune.
+ */
+async function stress(cap: number, rounds: number, killEvery: number): Promise<void> {
+  await withRoot(async (root) => {
+    const store = createFilesystemSnapshotStore({ root, maxHistoryFiles: cap });
+    await store.put(capture(0));
+    const script = new URL("./support/prune-stress-worker.js", import.meta.url).pathname;
+    const spawn = async (role: string, id: number): Promise<StressWorker> => {
+      const child = fork(script, [root, role, String(id), String(cap), SOURCE], { stdio: "ignore" });
+      await new Promise((resolve) => child.once("message", resolve));
+      return { child, role, id };
+    };
+    const roles: [string, number][] = [["put", 1], ["put", 2], ["reput", 1], ["prune", 1], ["prune", 2], ["latest", 1], ["list", 1]];
+    const workers = await Promise.all(roles.map(([role, id]) => spawn(role, id)));
+    const unexpected: string[] = [];
+    try {
+      for (let round = 1; round <= rounds; round += 1) {
+        const victim = round % killEvery === 0 ? workers[round % workers.length]! : undefined;
+        const results = workers.map((worker) => new Promise<string[]>((resolve) => {
+          const onMessage = (message: unknown) => { worker.child.off("exit", onExit); resolve((message as { errors: string[] }).errors); };
+          const onExit = () => { worker.child.off("message", onMessage); resolve([]); };
+          worker.child.once("message", onMessage);
+          worker.child.once("exit", onExit);
+          worker.child.send({ round });
+        }));
+        if (victim !== undefined) {
+          await sleep(round % 7);
+          victim.child.kill("SIGKILL");
         }
-        assert.deepEqual(unexpected, []);
-      } finally {
-        for (const child of children) child.kill();
+        for (const errors of await Promise.all(results)) {
+          unexpected.push(...errors.filter((error) =>
+            !error.startsWith("put:SnapshotHistoryFullError:") &&
+            !error.startsWith("reput:SnapshotHistoryFullError:") &&
+            !/^(?:latest|list):SnapshotStoreReadError:record-disappeared/.test(error)));
+        }
+        if (victim !== undefined) {
+          if (victim.child.exitCode === null && victim.child.signalCode === null) {
+            await new Promise((resolve) => victim.child.once("exit", resolve));
+          }
+          workers[workers.indexOf(victim)] = await spawn(victim.role, victim.id);
+        }
+        await store.prune(SOURCE, { keepLast: cap });
+        assert.deepEqual(await storeViolations(root, SOURCE, cap, store), [], `cap ${cap}, round ${round}`);
       }
-    });
+      assert.deepEqual(unexpected, []);
+    } finally {
+      for (const worker of workers) worker.child.kill("SIGKILL");
+    }
+  });
+}
+
+describe("cross-process stress with re-puts and SIGKILL", () => {
+  const rounds = Number(process.env.FORAGE_PRUNE_STRESS_ROUNDS ?? 10);
+  it("keeps every invariant at cap 2", async () => {
+    await stress(2, rounds, 3);
+  });
+  it("keeps every invariant at cap 8", async () => {
+    await stress(8, rounds, 3);
   });
 });
