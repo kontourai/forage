@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0](https://github.com/kontourai/forage/compare/v0.7.0...v1.0.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* new text captures have a different snapshotSha256 (and so a different sourceRef) than earlier-format captures of the same response, and a different bodyHash when the bytes are not plain UTF-8 (a non-UTF-8 charset, a byte-order mark, or invalid UTF-8).
+* new text captures have a different snapshotSha256 (and so a different sourceRef) than earlier-format captures of the same response, and a different bodyHash when the bytes are not plain UTF-8 (a non-UTF-8 charset, a byte-order mark, or invalid UTF-8).
+
+### Features
+
+* add snapshot pruning and make filesystem latest() read one record ([#76](https://github.com/kontourai/forage/issues/76)) ([6a98cc9](https://github.com/kontourai/forage/commit/6a98cc91ff874812c29a4f48fd847a010bde46e5))
+* hash text snapshots by their bytes and keep the declared charset ([#75](https://github.com/kontourai/forage/issues/75)) ([86efb30](https://github.com/kontourai/forage/commit/86efb30ab44d9fcb0457a57af943daf633a6fb6d)), closes [#73](https://github.com/kontourai/forage/issues/73)
+
 ## [0.7.0](https://github.com/kontourai/forage/compare/v0.6.1...v0.7.0) (2026-08-26)
 
 
