@@ -71,6 +71,28 @@ export interface SnapshotStore {
   list(sourceId: string): Promise<Snapshot[]>;
   /** Optional exact-lookup capability added after the released v0.3 store contract. */
   findExact?(reference: SnapshotLookup): Promise<ExactSnapshotLookupResult>;
+  /** Optional retention capability; stores written against the earlier contract need not implement it. */
+  prune?(sourceId: string, options: SnapshotPruneOptions): Promise<SnapshotPruneResult>;
+}
+
+/** A store that implements the retention capability. */
+export interface PrunableSnapshotStore extends SnapshotStore {
+  prune(sourceId: string, options: SnapshotPruneOptions): Promise<SnapshotPruneResult>;
+}
+
+/** An explicit retention rule for one source's history. */
+export interface SnapshotPruneOptions {
+  /** Keep this many of the newest snapshots (the head is always kept, even for 0). */
+  keepLast: number;
+  /** Snapshots to keep regardless of age, e.g. every snapshot a caller still cites. */
+  keep?: readonly SnapshotLookup[];
+}
+
+export interface SnapshotPruneResult {
+  /** Snapshots removed by this call. */
+  removed: number;
+  /** Snapshots of this source that remained when the call finished its scan. */
+  retained: number;
 }
 
 export interface SnapshotLookup {

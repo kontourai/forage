@@ -152,12 +152,39 @@ later history reads fail. Applications with a lower retention ceiling can pass
 Capacity decisions use deterministic, exclusive filesystem slot reservations,
 so cooperating store instances and processes cannot consume the same remaining
 slot. A process interrupted after reservation can complete the same immutable
-snapshot idempotently on retry. The store does not silently delete evidence.
+snapshot idempotently on retry. At the ceiling, `put()` rejects with
+`SnapshotHistoryFullError` (`code: "history-full"`).
+
+The store deletes nothing on its own. `prune(sourceId, { keepLast, keep })`
+applies an explicit retention rule: it keeps the newest `keepLast` snapshots,
+every snapshot matching a `keep` reference (for example, every snapshot the
+caller still cites), and always the head, even for `keepLast: 0`. It removes
+the other records with their identity-index entries and capacity slots, so a
+pruned store verifies cleanly and `put()` succeeds again after pruning a full
+store. The in-memory store implements the same rule.
+
+Prunes of one source are serialized across processes by a `prune.lock` file
+in the source directory; puts never wait for it. A prune waits up to 30
+seconds for the lock, then fails with `snapshot-store-error` (reason
+`store-busy`). A lock left by a process on the same host that has exited is
+taken over. Each prune first cleans up after interrupted operations: it
+removes temporary files whose writing process has exited (after a minute) and
+identity entries that name no record, and it gives a retained record back a
+missing identity entry or capacity slot.
+
+`latest()` picks the head from record filenames and reads only the head's
+record, so its cost does not grow with history length. It does so when every
+record filename carries an ISO-8601 UTC `fetchedAt`, which is what
+`fetchSource()` produces; otherwise it reads the whole history as `list()`
+does. To keep those filenames unambiguous, `put()` rejects a `fetchedAt` that
+looks like ISO-8601 but uses other separators.
 
 Filesystem reads are fail-closed. If an owned snapshot record is malformed,
-has a digest mismatch, or belongs to a different source, `list`, `latest`, and
-`get` reject with `SnapshotStoreReadError` whose safe `code` is
+has a digest mismatch, or belongs to a different source, `list` and `get`
+reject with `SnapshotStoreReadError` whose safe `code` is
 `"snapshot-corrupt"`; storage/race failures use `"snapshot-store-error"`.
+`latest` verifies the record(s) it reads the same way and rejects when the head
+is corrupt; it does not read, and so does not report, older records.
 They never silently substitute a partial history or an empty baseline. Exact
 reference resolution and replay return the same distinction through their
 typed result errors (`snapshot-corrupt` versus `snapshot-store-error`) without

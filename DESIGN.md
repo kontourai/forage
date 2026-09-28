@@ -73,7 +73,9 @@ when the fetched URL redirected.
   keep their raw bytes and declared charset and hash the bytes; the text is a
   view derived from them (see README, "Text bodies").
 - **Fail-closed snapshot reads.** A corrupt owned filesystem record is never
-  silently skipped to fabricate a partial or empty replay baseline. Native
+  silently skipped to fabricate a partial or empty replay baseline. `latest()`
+  reads only the head's record and fails closed when that record is corrupt;
+  `list()` and `get()` read every record. Native
   store reads throw a safe typed `SnapshotStoreReadError`; consumer-facing
   exact resolution and replay preserve `snapshot-corrupt` separately from a
   genuine missing snapshot and storage unavailability.
