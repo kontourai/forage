@@ -20,6 +20,7 @@ import {
   type SourceConfig,
 } from "./internal-types.js";
 import { isPathAllowed, parseRobots, productToken } from "./robots.js";
+import { decodeTextBody, parseDeclaredCharset } from "./text-body.js";
 import type { Snapshot } from "./types.js";
 
 const GLOBAL_POLITENESS = new Map<string, number>();
@@ -344,8 +345,11 @@ async function maybeRenderSnapshot(
       maxResponseBytes: options.maxResponseBytes,
     });
     warnings.push(...(rendered.warnings ?? []));
+    // A serialized DOM has no wire bytes: drop the plain response's bytes and
+    // charset, and hash the rendered text's UTF-8 ("decoded-utf8" basis).
+    const { bytes: _bytes, declaredCharset: _charset, ...plainFields } = plain;
     return {
-      ...plain,
+      ...plainFields,
       body: rendered.html,
       bodyHash: sha256Hex(rendered.html),
       rendered: true,
@@ -359,6 +363,7 @@ async function maybeRenderSnapshot(
 }
 
 function snapshotBodyByteLength(snapshot: Snapshot): number {
+  if (snapshot.bytes !== undefined) return snapshot.bytes.byteLength;
   return typeof snapshot.body === "string"
     ? Buffer.byteLength(snapshot.body, "utf8")
     : snapshot.body.byteLength;
@@ -640,20 +645,27 @@ export async function fetchSource(
         );
       }
       const contentType = response.headers.get("content-type");
-      const body = isTextual(contentType)
-        ? new TextDecoder().decode(bytes)
-        : bytes;
       const headersRecord = Object.fromEntries(response.headers.entries());
       const snapshot: Snapshot = {
         sourceId: config.id,
         url: currentUrl.href,
         status: response.status,
         fetchedAt: resolved.clock(),
-        body,
+        body: bytes,
         headers: headersRecord,
-        bodyHash:
-          typeof body === "string" ? sha256Hex(body) : sha256Bytes(body),
+        // Every body is hashed as the bytes received, textual or not.
+        bodyHash: sha256Bytes(bytes),
       };
+      if (isTextual(contentType)) {
+        const declared = parseDeclaredCharset(contentType);
+        const decoded = decodeTextBody(bytes, declared.charset);
+        for (const warning of [...declared.warnings, ...decoded.warnings]) {
+          warnings.push(`${currentUrl.href}: ${warning}`);
+        }
+        snapshot.body = decoded.text;
+        snapshot.bytes = bytes;
+        snapshot.declaredCharset = declared.charset;
+      }
       if (redirects.length) snapshot.redirects = redirects;
       const acquired = await maybeRenderSnapshot(
         config,

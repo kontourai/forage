@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import type {
   ExactSnapshotLookupResult,
   Snapshot,
+  SnapshotHashBasis,
   SnapshotLookup,
   SnapshotStore,
 } from "./types.js";
 import { isSnapshotStoreReadError } from "./snapshot-store-errors.js";
+import { decodeTextBody, isRecordableCharset } from "./text-body.js";
 
 const MAX_REFERENCE_LENGTH = 16 * 1024;
 const MAX_LEGACY_REFERENCE_LENGTH = 1024 * 1024;
@@ -16,6 +18,18 @@ const MAX_DURABLE_BODY_BYTES = 64 * 1024 * 1024;
 
 function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/** Report what a snapshot's `bodyHash` was computed over. */
+export function snapshotHashBasis(snapshot: Snapshot): SnapshotHashBasis {
+  return typeof snapshot.body === "string" && snapshot.bytes === undefined
+    ? "decoded-utf8"
+    : "bytes";
+}
+
+/** The exact input `bodyHash` commits to. */
+export function snapshotHashInput(snapshot: Snapshot): string | Uint8Array {
+  return snapshot.bytes ?? snapshot.body;
 }
 
 export function snapshotEnvelopeDigest(
@@ -29,7 +43,12 @@ export function snapshotEnvelopeDigest(
     status: snapshot.status,
     fetchedAt: snapshot.fetchedAt,
     bodyHash: snapshot.bodyHash,
-    bodyEncoding: typeof snapshot.body === "string" ? "utf8" : "bytes",
+    // Byte-hashed text commits to its charset, which fixes the decoded text.
+    // Records without `bytes` keep the earlier envelope, so their existing
+    // references still resolve.
+    ...(snapshot.bytes === undefined
+      ? { bodyEncoding: typeof snapshot.body === "string" ? "utf8" : "bytes" }
+      : { bodyEncoding: "charset-decoded-bytes", declaredCharset: snapshot.declaredCharset }),
     headers: snapshot.headers === undefined
       ? null
       : Object.entries(snapshot.headers).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0),
@@ -181,6 +200,18 @@ function assertSnapshotCore(
   ) {
     throw new TypeError("snapshot has an invalid durable shape");
   }
+  if (snapshot.bytes === undefined) {
+    if (snapshot.declaredCharset !== undefined) {
+      throw new TypeError("snapshot declaredCharset requires raw bytes");
+    }
+  } else if (
+    !(snapshot.bytes instanceof Uint8Array) ||
+    typeof snapshot.body !== "string" ||
+    snapshot.bytes.byteLength > MAX_DURABLE_BODY_BYTES ||
+    !isRecordableCharset(snapshot.declaredCharset)
+  ) {
+    throw new TypeError("snapshot has an invalid durable shape");
+  }
 }
 
 function snapshotStrings(snapshot: Snapshot): string[] {
@@ -218,8 +249,11 @@ function assertReferenceableSnapshot(
   if (snapshotStrings(value).some((entry) => !isWellFormed(entry))) {
     throw new TypeError("snapshot strings must be well-formed UTF-16");
   }
-  if (sha256(value.body) !== value.bodyHash) {
+  if (sha256(snapshotHashInput(value)) !== value.bodyHash) {
     throw new TypeError("snapshot body does not match its SHA-256 digest");
+  }
+  if (value.bytes !== undefined && decodeTextBody(value.bytes, value.declaredCharset ?? null).text !== value.body) {
+    throw new TypeError("snapshot text is not the decoding of its bytes");
   }
 }
 
@@ -241,6 +275,9 @@ function cloneDurableSnapshot(snapshot: Snapshot): Snapshot {
     body: snapshot.body instanceof Uint8Array
       ? new Uint8Array(snapshot.body)
       : snapshot.body,
+    ...(snapshot.bytes === undefined
+      ? {}
+      : { bytes: new Uint8Array(snapshot.bytes), declaredCharset: snapshot.declaredCharset ?? null }),
     bodyHash: snapshot.bodyHash,
     ...(snapshot.headers === undefined ? {} : { headers: { ...snapshot.headers } }),
     ...(snapshot.redirects === undefined ? {} : { redirects: [...snapshot.redirects] }),

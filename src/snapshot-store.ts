@@ -5,7 +5,8 @@ import { link, lstat, mkdir, open, opendir, readdir, unlink } from "node:fs/prom
 import path from "node:path";
 import { types as utilTypes } from "node:util";
 import type { FetchResult } from "./internal-types.js";
-import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "./provenance.js";
+import { canonicalDurableSnapshot, snapshotEnvelopeDigest, snapshotHashInput } from "./provenance.js";
+import { decodeTextBody } from "./text-body.js";
 import {
   snapshotCorrupt,
   snapshotStoreFailure,
@@ -115,9 +116,8 @@ function assertExactLookup(reference: SnapshotLookup): void {
 
 function exactLookupMatches(snapshot: Snapshot, reference: SnapshotLookup): boolean {
   if (reference.snapshotDigest === undefined) {
-    const body = typeof snapshot.body === "string"
-      ? Buffer.from(snapshot.body, "utf8")
-      : snapshot.body;
+    const input = snapshotHashInput(snapshot);
+    const body = typeof input === "string" ? Buffer.from(input, "utf8") : input;
     if (!(body instanceof Uint8Array) ||
       createHash("sha256").update(body).digest("hex") !== snapshot.bodyHash) {
       throw new Error("snapshot store record body does not match its digest");
@@ -365,8 +365,19 @@ async function readSnapshotFile(
   }
 }
 
+// Record formats on disk:
+// - text, earlier format: `body` holds the decoded text; `bodyHash` is over its UTF-8.
+// - binary: `bodyBase64` holds the bytes.
+// - text, byte-hashed: `bodyBase64` holds the raw bytes and `declaredCharset`
+//   (string or null) is present. The text is never stored; it is re-derived
+//   from the bytes on every read, so a record cannot hold text and bytes that
+//   disagree.
 function toDiskShape(snapshot: Snapshot): Record<string, unknown> {
   const durable = canonicalDurableSnapshot(snapshot);
+  if (durable.bytes !== undefined) {
+    const { body: _text, bytes, ...rest } = durable;
+    return { ...rest, bodyBase64: Buffer.from(bytes).toString("base64") };
+  }
   if (!(durable.body instanceof Uint8Array)) {
     return durable as unknown as Record<string, unknown>;
   }
@@ -383,9 +394,15 @@ function fromDiskShape(value: unknown): unknown {
     Buffer.from(record.bodyBase64, "base64").toString("base64") !== record.bodyBase64
   ) throw new TypeError("snapshot binary body is not canonical base64");
   const { bodyBase64, ...rest } = record;
+  const bytes = new Uint8Array(Buffer.from(bodyBase64, "base64"));
+  if (!("declaredCharset" in record)) return { ...rest, body: bytes };
+  if (record.declaredCharset !== null && typeof record.declaredCharset !== "string") {
+    throw new TypeError("snapshot declaredCharset is invalid");
+  }
   return {
     ...rest,
-    body: new Uint8Array(Buffer.from(bodyBase64, "base64")),
+    body: decodeTextBody(bytes, record.declaredCharset).text,
+    bytes,
   };
 }
 

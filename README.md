@@ -93,6 +93,35 @@ if (!replay.ok) throw new Error(replay.error.message);
 console.log(replay.snapshot.body);
 ```
 
+### Text bodies: bytes, charset, and hash basis
+
+A textual response keeps the exact bytes received (`snapshot.bytes`) and the
+lower-cased `charset` its `Content-Type` declared (`snapshot.declaredCharset`,
+or `null`). `bodyHash` is SHA-256 of those bytes, so two responses that differ
+in any byte never share a hash. `snapshot.body` is the text decoded from the
+bytes with the declared charset (UTF-8 when none is declared), through the
+exported `decodeTextBody()`:
+
+- an unknown charset label falls back to UTF-8 and adds a fetch warning;
+- bytes invalid in the chosen encoding become U+FFFD and add a fetch warning;
+- a leading byte-order mark that matches the chosen encoding is left out of
+  `body` but kept in `bytes`, and never overrides the declared charset.
+
+Filesystem records store the bytes and the charset, not the text, and
+re-derive `body` on every read, so replay returns the fetched bytes exactly.
+
+**Migration.** Text snapshots written by earlier releases hashed the UTF-8
+encoding of text that was always decoded as UTF-8. Those records still load,
+and their references still resolve; `snapshotHashBasis(snapshot)` reports
+`"decoded-utf8"` for them and `"bytes"` for new captures (and for binary
+bodies, which were always hashed as bytes). Rendered snapshots have no wire
+bytes and keep the `"decoded-utf8"` basis. Because the reference envelope of a
+byte-hashed text snapshot also commits to its charset, every new text capture
+has a different `snapshotSha256` than an earlier-format capture of the same
+response. Its `bodyHash` also differs when the bytes are not plain UTF-8: a
+non-UTF-8 charset, a byte-order mark, or invalid UTF-8. A consumer that compares
+`bodyHash` across the upgrade sees at most one spurious change per such source.
+
 Direct acquisitions can enforce a source-specific body ceiling across plain,
 rendered, and validator-backed snapshots. Oversized declared lengths fail
 early, while streamed and final snapshot checks remain authoritative when the

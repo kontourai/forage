@@ -14,7 +14,24 @@ export interface Snapshot {
   url: string;
   status: number;
   fetchedAt: string;
+  /**
+   * Binary responses: the raw bytes. Textual responses: the text decoded from
+   * `bytes` with `declaredCharset` (see `decodeTextBody`).
+   */
   body: string | Uint8Array;
+  /**
+   * The exact bytes of a textual response, as received. Present exactly when
+   * `declaredCharset` is. When present, `bodyHash` is SHA-256 of these bytes
+   * and `body` is derived from them.
+   *
+   * Absent on binary snapshots (where `body` is the bytes), on rendered
+   * snapshots (a serialized DOM has no wire bytes), and on text snapshots
+   * in the earlier record format, whose `bodyHash` was taken over the UTF-8
+   * encoding of the decoded text. `snapshotHashBasis` reports which applies.
+   */
+  bytes?: Uint8Array;
+  /** Lower-cased `charset` parameter of `Content-Type`, or `null` when none was declared. */
+  declaredCharset?: string | null;
   headers?: Record<string, string>;
   bodyHash: string;
   /** Ordered URLs visited before `url`, when a same-host redirect occurred. */
@@ -35,6 +52,16 @@ export interface Snapshot {
    */
   notModified?: boolean;
 }
+
+/**
+ * What `bodyHash` was computed over.
+ *
+ * - `"bytes"`: the exact bytes received (binary bodies, and text bodies that
+ *   carry `Snapshot.bytes`).
+ * - `"decoded-utf8"`: the UTF-8 encoding of a text body. Text snapshots in
+ *   the earlier record format and rendered snapshots use this basis.
+ */
+export type SnapshotHashBasis = "bytes" | "decoded-utf8";
 
 /** Persist/replay snapshots. A filesystem and an object-store impl both satisfy this. */
 export interface SnapshotStore {
