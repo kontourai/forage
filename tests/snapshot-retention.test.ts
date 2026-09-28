@@ -606,6 +606,29 @@ describe("source lock: compare before remove, at each call site", () => {
     })));
   });
 
+  it("a writer still gives up at its deadline when every break declines a changed lock", async () => {
+    // Each time a breaker judges the lock stale, the lock is swapped for a new
+    // stale one, so every removal declines. The declined break must not count
+    // as progress: the writer sleeps between tries and stops at its deadline.
+    await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+      const { store, directory } = await storeWithRecords(root);
+      const lock = await writeLock(directory, deadOwner());
+      const dead = deadOwner();
+      let swaps = 0;
+      testOnlySourceLockIo.afterStaleJudgement = async () => {
+        swaps += 1;
+        await unlink(lock);
+        await writeFile(lock, JSON.stringify({ ...dead, token: randomUUID() }));
+      };
+      try {
+        await assertBusyWithinWait(store.put(capture(3)));
+      } finally {
+        testOnlySourceLockIo.afterStaleJudgement = undefined;
+      }
+      assert.ok(swaps >= 1, "precondition: a break declined a changed lock");
+    })));
+  });
+
   it("release leaves alone a lock that another owner took after this one was broken", async () => {
     await withMachine(MACHINE, () => withRoot(async (root) => {
       const { store, directory } = await storeWithRecords(root);
