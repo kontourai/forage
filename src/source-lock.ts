@@ -188,18 +188,25 @@ async function clearStaleMarker(directory: string): Promise<void> {
   if (state !== undefined && await isStale(state.text, state.ageMs)) await removeIfUnchanged(marker, state.text);
 }
 
-/** Break the lock if it is (still) stale, one breaker at a time. */
-async function breakIfStale(directory: string): Promise<void> {
+/**
+ * Break the lock if it is (still) stale, one breaker at a time. Returns true
+ * when the lock is gone, so the caller should try to acquire it at once.
+ */
+async function breakIfStale(directory: string): Promise<boolean> {
   const lock = path.join(directory, SOURCE_LOCK);
   const marker = path.join(directory, BREAK_MARKER);
   const mine = await newOwner();
   if (!await createExclusive(marker, mine)) {
+    // Another breaker is at work, or died here; a dead one's marker is cleared.
     await clearStaleMarker(directory);
-    return;
+    return false;
   }
   try {
     const state = await readState(lock);
-    if (state !== undefined && await isStale(state.text, state.ageMs)) await removeIfUnchanged(lock, state.text);
+    if (state === undefined) return true;
+    if (!await isStale(state.text, state.ageMs)) return false;
+    await removeIfUnchanged(lock, state.text);
+    return true;
   } finally {
     await removeIfUnchanged(marker, mine);
   }
@@ -230,10 +237,7 @@ export async function acquireSourceLock(directory: string): Promise<() => Promis
     }
     const state = await readState(lock);
     if (state === undefined) continue;
-    if (await isStale(state.text, state.ageMs)) {
-      await breakIfStale(directory);
-      continue;
-    }
+    if (await isStale(state.text, state.ageMs) && await breakIfStale(directory)) continue;
     if (Date.now() > deadline) throw snapshotStoreFailure("store-busy");
     await sleep(delay);
   }

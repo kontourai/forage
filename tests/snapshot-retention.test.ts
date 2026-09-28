@@ -402,11 +402,14 @@ describe("source lock: stale owners", () => {
   }
 
   it("breaks a lock whose owner process has exited", async () => {
-    await withRoot(async (root) => {
-      const { store, directory } = await storeWithRecords(root);
-      await writeLock(directory, { host: hostname(), pid: exitedPid(), start: null, token: randomUUID() });
-      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+    // A wait shorter than the stale ceiling: only the owner's exit can free the lock.
+    await withLockTiming({ waitMs: 2_000 }, async () => {
+      await withRoot(async (root) => {
+        const { store, directory } = await storeWithRecords(root);
+        await writeLock(directory, { host: hostname(), pid: exitedPid(), start: null, token: randomUUID() });
+        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      });
     });
   });
 
@@ -454,6 +457,21 @@ describe("source lock: stale owners", () => {
         await utimes(marker, then, then);
         assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
         assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      });
+    });
+  });
+
+  it("gives up within the wait when a live breaker holds the marker of a stale lock", async () => {
+    await withLockTiming({ waitMs: 300 }, async () => {
+      await withRoot(async (root) => {
+        const { store, directory } = await storeWithRecords(root);
+        await writeLock(directory, { host: hostname(), pid: exitedPid(), start: null, token: randomUUID() });
+        await writeFile(path.join(directory, "source.lock.break"), JSON.stringify({
+          host: hostname(), pid: process.pid, start: await processStartIdentity(process.pid) ?? null, token: randomUUID(),
+        }));
+        const started = Date.now();
+        await assert.rejects(store.prune(SOURCE, { keepLast: 1 }), { reason: "store-busy" });
+        assert.ok(Date.now() - started < 5_000);
       });
     });
   });
