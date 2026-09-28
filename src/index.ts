@@ -15,6 +15,9 @@ export type {
   Page,
   Snapshot,
   SnapshotHashBasis,
+  PrunableSnapshotStore,
+  SnapshotPruneOptions,
+  SnapshotPruneResult,
   ExactSnapshotLookupResult,
   ExactSnapshotStore,
   VerifiedHeadSnapshotStore,
@@ -39,7 +42,9 @@ export { snapshotHashBasis } from "./provenance.js";
 export { decodeTextBody, parseDeclaredCharset } from "./text-body.js";
 export type { DecodedTextBody, DeclaredCharset } from "./text-body.js";
 export {
+  SnapshotHistoryFullError,
   SnapshotStoreReadError,
+  isSnapshotHistoryFullError,
   isSnapshotStoreReadError,
 } from "./snapshot-store-errors.js";
 export type {

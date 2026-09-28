@@ -55,11 +55,16 @@ export type {
   HeadWitnessComparisonResult,
   Snapshot,
   SnapshotHashBasis,
+  PrunableSnapshotStore,
+  SnapshotPruneOptions,
+  SnapshotPruneResult,
   SnapshotLookup,
   SnapshotStore,
 } from "./types.js";
 export {
+  SnapshotHistoryFullError,
   SnapshotStoreReadError,
+  isSnapshotHistoryFullError,
   isSnapshotStoreReadError,
 } from "./snapshot-store-errors.js";
 export type {

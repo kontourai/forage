@@ -751,9 +751,12 @@ describe("@kontourai/forage/fetch public surface", () => {
   it("fails closed with a typed integrity failure when an owned on-disk envelope is tampered", async () => {
     const corrupted = replaySnapshot();
     const validBody = "model: valid sibling";
+    // The tampered record is the head. latest() reads only the head's
+    // record(s), so it must fail closed on a corrupt head; list() and get()
+    // still read, and fail on, every record.
     const validSibling: Snapshot = {
       ...corrupted,
-      fetchedAt: "2026-07-18T12:01:00.000Z",
+      fetchedAt: "2026-07-18T11:59:00.000Z",
       body: validBody,
       bodyHash: createHash("sha256").update(validBody).digest("hex"),
     };

@@ -14,7 +14,8 @@ export type SnapshotStoreReadErrorReason =
   | "record-disappeared"
   | "read-raced"
   | "read-failed"
-  | "read-limit";
+  | "read-limit"
+  | "store-busy";
 
 /**
  * A filesystem snapshot read could not produce a trustworthy result.
@@ -47,4 +48,21 @@ export function snapshotCorrupt(reason: SnapshotStoreReadErrorReason): SnapshotS
 
 export function snapshotStoreFailure(reason: SnapshotStoreReadErrorReason): SnapshotStoreReadError {
   return new SnapshotStoreReadError("snapshot-store-error", reason);
+}
+
+/**
+ * A filesystem store refused a write because the source already holds
+ * `maxHistoryFiles` records. The store is intact; `prune` frees capacity.
+ */
+export class SnapshotHistoryFullError extends Error {
+  readonly name = "SnapshotHistoryFullError";
+  readonly code = "history-full";
+
+  constructor(readonly maxHistoryFiles: number) {
+    super(`snapshot history exceeds ${maxHistoryFiles} records`);
+  }
+}
+
+export function isSnapshotHistoryFullError(value: unknown): value is SnapshotHistoryFullError {
+  return value instanceof SnapshotHistoryFullError;
 }

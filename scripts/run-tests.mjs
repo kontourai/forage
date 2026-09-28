@@ -19,7 +19,7 @@ const TEST_DIR = "dist/tests";
 // A floor, not a target: the suite fails when fewer than this many compiled test
 // files are found. Raise it as the suite grows. Never lower it to turn a red run
 // green — a drop means test files stopped being built, or stopped existing.
-const MIN_TEST_FILES = 8;
+const MIN_TEST_FILES = 9;
 
 function discoverTestFiles(dir) {
   let entries;

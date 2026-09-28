@@ -7,8 +7,10 @@ import { types as utilTypes } from "node:util";
 import type { FetchResult } from "./internal-types.js";
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest, snapshotHashInput } from "./provenance.js";
 import { decodeTextBody } from "./text-body.js";
+import { acquireSourceLock, removeLockLeftovers } from "./source-lock.js";
 import {
   snapshotCorrupt,
+  SnapshotHistoryFullError,
   snapshotStoreFailure,
   SnapshotStoreReadError,
 } from "./snapshot-store-errors.js";
@@ -16,9 +18,12 @@ import type {
   ExactSnapshotLookupResult,
   ExactSnapshotStore,
   HeadWitnessComparisonResult,
+  PrunableSnapshotStore,
   ReadVerifiedHeadResult,
   Snapshot,
   SnapshotLookup,
+  SnapshotPruneOptions,
+  SnapshotPruneResult,
   SnapshotStore,
   SourceHeadWitness,
   VerifiedHeadLimits,
@@ -57,6 +62,29 @@ function snapshotFileName(snapshot: Snapshot): string {
     .replace(/[^0-9A-Za-z._-]/g, "-")
     .slice(0, 80) || "snapshot";
   return `${timestamp}-${snapshotEnvelopeDigest(snapshot)}.json`;
+}
+
+// An envelope record whose filename timestamp is an ISO-8601 UTC instant with
+// its ':' separators replaced by '-'. For such names, filename order equals
+// `fetchedAt` string order, which is what lets `latest()` pick the head from
+// directory names alone.
+const ISO_RECORD_FILE = /^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2}(?:\.\d{1,9})?Z)-[a-f0-9]{64}\.json$/;
+
+/** The `fetchedAt` an ISO-shaped record name encodes, or undefined for any other name. */
+function isoFetchedAtFromFileName(filename: string): string | undefined {
+  const match = ISO_RECORD_FILE.exec(filename);
+  return match === null ? undefined : `${match[1]}:${match[2]}:${match[3]}`;
+}
+
+/**
+ * Keep ISO-shaped filenames unambiguous: a `fetchedAt` that sanitizes to an
+ * ISO-shaped name must be exactly the instant that name encodes.
+ */
+function assertUnambiguousFetchedAt(snapshot: Snapshot): void {
+  const encoded = isoFetchedAtFromFileName(snapshotFileName(snapshot));
+  if (encoded !== undefined && encoded !== snapshot.fetchedAt) {
+    throw new TypeError("snapshot fetchedAt looks like ISO-8601 but does not use its separators");
+  }
 }
 
 function snapshotFileNameFromLookup(reference: SnapshotLookup): string | undefined {
@@ -305,11 +333,12 @@ async function reserveCapacitySlot(
   for (let offset = 0; offset < maxHistoryFiles; offset += 1) {
     const slot = (start + offset) % maxHistoryFiles;
     const file = path.join(indexDirectory, `${slot}.txt`);
+    // Callers hold the source lock, so no slot is freed during this probe.
     if (await publishImmutableFile(file, filename)) return;
     const existing = await readBoundedRegularFile(file, 512);
     if (existing === filename) return;
   }
-  throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+  throw new SnapshotHistoryFullError(maxHistoryFiles);
 }
 
 async function ensureCapacityIndex(
@@ -333,7 +362,7 @@ async function ensureCapacityIndex(
       .filter((name) => name.endsWith(".json"))
       .sort();
     if (records.length > maxHistoryFiles) {
-      throw new Error(`snapshot history exceeds ${maxHistoryFiles} records`);
+      throw new SnapshotHistoryFullError(maxHistoryFiles);
     }
     for (const filename of records) {
       await reserveCapacitySlot(indexDirectory, filename, maxHistoryFiles);
@@ -351,6 +380,7 @@ async function readSnapshotFile(
 ): Promise<Snapshot | undefined> {
   const text = await readBoundedRegularFile(file, maximumBytes, required);
   if (text === undefined) return undefined;
+  testOnlySnapshotStoreIo.onRecordRead?.();
   let parsed: unknown;
   try {
     parsed = fromDiskShape(JSON.parse(text));
@@ -484,6 +514,17 @@ interface HeadFingerprint {
   identityDirectory: EntryMetadata;
   digest: string;
 }
+
+/** @internal Test-only record-read spy; deliberately not re-exported by any package surface. */
+export const testOnlySnapshotStoreIo = {
+  onRecordRead: undefined as undefined | (() => void),
+  /** Runs inside a put's critical section after its slot decision, and as soon as a prune holds the lock. */
+  insideSourceLock: undefined as undefined | ((operation: "put" | "prune") => void | Promise<void>),
+  /** Runs after a put has published its record and before it writes the identity entry. */
+  beforePutIdentity: undefined as undefined | (() => void | Promise<void>),
+  /** Runs after prune has read the capacity index and before it removes anything. */
+  afterPruneScan: undefined as undefined | (() => void | Promise<void>),
+};
 
 /** @internal Test-only read spy; deliberately not re-exported by any package surface. */
 export const testOnlyHeadWitnessIo = {
@@ -891,17 +932,16 @@ function copyValidWitness(value: unknown): SourceHeadWitness | undefined {
   }
 }
 
-async function readAllSnapshots(
-  root: string,
-  sourceId: string,
+/** Record filenames of one source, or undefined when the source has no directory. */
+async function listRecordNames(
+  directory: string,
   maxHistoryFiles: number,
-): Promise<Snapshot[]> {
-  const directory = path.join(root, sourceDirName(sourceId));
+): Promise<string[] | undefined> {
   let directoryStat;
   try {
     directoryStat = await lstat(directory);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw snapshotStoreFailure("read-failed");
   }
   if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
@@ -917,19 +957,84 @@ async function readAllSnapshots(
   if (records.length > maxHistoryFiles) {
     throw snapshotStoreFailure("read-limit");
   }
-  const snapshots = new Map<string, Snapshot>();
+  return records;
+}
+
+async function readVerifiedRecord(directory: string, name: string, sourceId: string): Promise<Snapshot> {
+  const durable = await readSnapshotFile(
+    path.join(directory, name),
+    true,
+    isReleasedSnapshotFileName(name),
+  );
+  if (durable === undefined) throw snapshotStoreFailure("record-disappeared");
+  if (durable.sourceId !== sourceId) throw snapshotCorrupt("foreign-source-record");
+  assertSnapshotFileIdentity(name, durable);
+  return durable;
+}
+
+/** Every record of a source, newest first, with the filenames that hold it. */
+async function readAllSnapshotEntries(
+  root: string,
+  sourceId: string,
+  maxHistoryFiles: number,
+): Promise<{ snapshot: Snapshot; names: string[] }[]> {
+  const directory = path.join(root, sourceDirName(sourceId));
+  const records = await listRecordNames(directory, maxHistoryFiles);
+  if (records === undefined) return [];
+  const entries = new Map<string, { snapshot: Snapshot; names: string[] }>();
   for (const name of records) {
-    const durable = await readSnapshotFile(
-      path.join(directory, name),
-      true,
-      isReleasedSnapshotFileName(name),
-    );
-    if (durable === undefined) throw snapshotStoreFailure("record-disappeared");
-    if (durable.sourceId !== sourceId) throw snapshotCorrupt("foreign-source-record");
-    assertSnapshotFileIdentity(name, durable);
-    snapshots.set(snapshotDigestForStore(durable), durable);
+    const durable = await readVerifiedRecord(directory, name, sourceId);
+    const digest = snapshotDigestForStore(durable);
+    const existing = entries.get(digest);
+    if (existing === undefined) entries.set(digest, { snapshot: durable, names: [name] });
+    else existing.names.push(name);
   }
-  return sortSnapshots([...snapshots.values()]);
+  const order = new Map(sortSnapshots([...entries.values()].map((entry) => entry.snapshot))
+    .map((snapshot, index) => [snapshot, index]));
+  return [...entries.values()].sort((left, right) => order.get(left.snapshot)! - order.get(right.snapshot)!);
+}
+
+async function readAllSnapshots(
+  root: string,
+  sourceId: string,
+  maxHistoryFiles: number,
+): Promise<Snapshot[]> {
+  return (await readAllSnapshotEntries(root, sourceId, maxHistoryFiles)).map((entry) => entry.snapshot);
+}
+
+/**
+ * The newest record, reading only the records whose filename carries the
+ * newest timestamp. Falls back to reading every record when any filename is
+ * not ISO-shaped (released-format names, non-ISO `fetchedAt` values), or when
+ * a candidate's `fetchedAt` is not the instant its name encodes.
+ */
+async function readLatestSnapshot(
+  root: string,
+  sourceId: string,
+  maxHistoryFiles: number,
+): Promise<Snapshot | undefined> {
+  const directory = path.join(root, sourceDirName(sourceId));
+  const records = await listRecordNames(directory, maxHistoryFiles);
+  if (records === undefined || records.length === 0) return undefined;
+  let newest: string | undefined;
+  let candidates: string[] = [];
+  for (const name of records) {
+    const fetchedAt = isoFetchedAtFromFileName(name);
+    if (fetchedAt === undefined) return (await readAllSnapshots(root, sourceId, maxHistoryFiles))[0];
+    if (newest === undefined || fetchedAt > newest) {
+      newest = fetchedAt;
+      candidates = [name];
+    } else if (fetchedAt === newest) {
+      candidates.push(name);
+    }
+  }
+  const snapshots: Snapshot[] = [];
+  for (const name of candidates) {
+    const snapshot = await readVerifiedRecord(directory, name, sourceId);
+    if (snapshot.fetchedAt !== newest) return (await readAllSnapshots(root, sourceId, maxHistoryFiles))[0];
+    snapshots.push(snapshot);
+  }
+  return sortSnapshots(snapshots)[0];
 }
 
 async function persistFilesystemSnapshot(
@@ -940,27 +1045,247 @@ async function persistFilesystemSnapshot(
   const directory = path.join(root, sourceDirName(snapshot.sourceId));
   await ensureRealDirectory(directory);
   const filename = snapshotFileName(snapshot);
+  assertUnambiguousFetchedAt(snapshot);
   const record = path.join(directory, filename);
   const serialized = JSON.stringify(toDiskShape(snapshot), null, 2);
   if (Buffer.byteLength(serialized, "utf8") > MAX_SNAPSHOT_FILE_BYTES) {
     throw new TypeError("serialized snapshot exceeds the filesystem store limit");
   }
-  const capacityIndex = await ensureCapacityIndex(directory, maxHistoryFiles);
-  await reserveCapacitySlot(capacityIndex, filename, maxHistoryFiles);
-  if (!await publishImmutableFile(record, serialized)) {
-    const existing = await readSnapshotFile(record, true);
-    if (existing === undefined) throw snapshotStoreFailure("record-disappeared");
-    assertSnapshotFileIdentity(filename, existing);
-    if (snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
-      throw new Error("immutable snapshot record conflicts with the supplied capture");
+  // The whole write holds the source lock, so no prune can remove this
+  // record, its slot, or its identity entry part-way through.
+  const release = await acquireSourceLock(directory);
+  try {
+    const capacityIndex = await ensureCapacityIndex(directory, maxHistoryFiles);
+    // An existing record already holds a slot. Probing for it again could
+    // reserve a second slot past a gap left by an earlier prune.
+    if (!await regularFileExists(record)) {
+      await reserveCapacitySlot(capacityIndex, filename, maxHistoryFiles);
+    }
+    await testOnlySnapshotStoreIo.insideSourceLock?.("put");
+    if (!await publishImmutableFile(record, serialized)) {
+      const existing = await readSnapshotFile(record, true);
+      if (existing === undefined) throw snapshotStoreFailure("record-disappeared");
+      assertSnapshotFileIdentity(filename, existing);
+      if (snapshotEnvelopeDigest(existing) !== snapshotEnvelopeDigest(snapshot)) {
+        throw new Error("immutable snapshot record conflicts with the supplied capture");
+      }
+    }
+    const identityIndex = path.join(directory, "identity-index");
+    await ensureRealDirectory(identityIndex);
+    await testOnlySnapshotStoreIo.beforePutIdentity?.();
+    await writeIdentityIndex(path.join(identityIndex, `${snapshotIdentityDigest(snapshot)}.txt`), filename);
+  } finally {
+    await release();
+  }
+}
+
+async function regularFileExists(file: string): Promise<boolean> {
+  try {
+    return (await lstat(file)).isFile();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function unlinkIfPresent(file: string): Promise<void> {
+  try {
+    await unlink(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+function assertPruneOptions(options: SnapshotPruneOptions): SnapshotLookup[] {
+  if (
+    typeof options !== "object" || options === null ||
+    !Number.isSafeInteger(options.keepLast) || options.keepLast < 0 ||
+    (options.keep !== undefined && !Array.isArray(options.keep))
+  ) {
+    throw new TypeError("prune requires a non-negative integer keepLast and an optional keep array");
+  }
+  const keep = (options.keep ?? []).map((reference) => ({ ...reference }));
+  for (const reference of keep) assertExactLookup(reference);
+  return keep;
+}
+
+function isKept(snapshot: Snapshot, keep: readonly SnapshotLookup[]): boolean {
+  return keep.some((reference) =>
+    snapshot.sourceId === reference.sourceId &&
+    snapshot.url === reference.url &&
+    snapshot.bodyHash === reference.bodyHash &&
+    snapshot.fetchedAt === reference.fetchedAt &&
+    (reference.snapshotDigest === undefined || snapshotDigestForStore(snapshot) === reference.snapshotDigest));
+}
+
+/** Split a newest-first history into what a retention rule keeps and removes. */
+function selectPruneVictims<T>(
+  newestFirst: readonly T[],
+  snapshotOf: (entry: T) => Snapshot,
+  keepLast: number,
+  keep: readonly SnapshotLookup[],
+): { retained: T[]; victims: T[] } {
+  const retained: T[] = [];
+  const victims: T[] = [];
+  newestFirst.forEach((entry, index) => {
+    // index 0 is the head, which is never removed.
+    if (index === 0 || index < keepLast || isKept(snapshotOf(entry), keep)) retained.push(entry);
+    else victims.push(entry);
+  });
+  return { retained, victims };
+}
+
+async function syncDirectoryIfPresent(directory: string): Promise<void> {
+  let handle;
+  try {
+    handle = await open(directory, "r");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+const TEMP_FILE = /\.[1-9][0-9]*\.[0-9a-f-]{36}\.tmp$/;
+const SLOT_FILE = /^(?:0|[1-9][0-9]*)\.txt$/;
+const IDENTITY_FILE = /^[a-f0-9]{64}\.txt$/;
+
+/**
+ * Remove every temporary file in one store directory. Only callers holding
+ * the source lock may do this: every write to a source holds that lock, so any
+ * temporary file present was left by a writer that died.
+ */
+async function removeTemporaryFiles(directory: string): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  for (const name of names) if (TEMP_FILE.test(name)) await unlinkIfPresent(path.join(directory, name));
+}
+
+/** Numeric slot files by the record they name. Temporary files are not slots and are not counted. */
+async function readCapacitySlots(capacityIndex: string, maxHistoryFiles: number): Promise<Map<string, string[]>> {
+  let names: string[] = [];
+  try {
+    names = await readdir(capacityIndex);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const slots = names.filter((name) => SLOT_FILE.test(name));
+  if (slots.length > maxHistoryFiles) throw snapshotStoreFailure("read-limit");
+  const byRecord = new Map<string, string[]>();
+  for (const slot of slots) {
+    const recordName = await readBoundedRegularFile(path.join(capacityIndex, slot), 512);
+    if (recordName === undefined) continue;
+    byRecord.set(recordName, [...(byRecord.get(recordName) ?? []), slot]);
+  }
+  return byRecord;
+}
+
+/** Identity entries whose record does not exist. */
+async function removeOrphanIdentityEntries(directory: string, maxHistoryFiles: number): Promise<void> {
+  const identityIndex = path.join(directory, "identity-index");
+  let names: string[];
+  try {
+    names = (await readdir(identityIndex)).filter((name) => IDENTITY_FILE.test(name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  if (names.length > 2 * maxHistoryFiles) throw snapshotStoreFailure("read-limit");
+  for (const name of names) {
+    const recordName = (await readBoundedRegularFile(path.join(identityIndex, name), 512))?.trim();
+    if (recordName === undefined || !ENVELOPE_RECORD_FILE.test(recordName)) continue;
+    if (!await regularFileExists(path.join(directory, recordName))) {
+      await unlinkIfPresent(path.join(identityIndex, name));
     }
   }
+}
+
+/**
+ * Remove records outside a retention rule, with their identity-index entry and
+ * capacity slot, while holding the source lock.
+ *
+ * Because every put also holds the lock, nothing is in flight during a prune.
+ * So it first removes everything an interrupted put or prune could leave:
+ * temporary files, break markers and aside files of dead lock breakers,
+ * identity entries and slots that name no record. After removing the victims
+ * it restores a retained record's missing identity entry or slot.
+ */
+async function pruneFilesystemSnapshots(
+  root: string,
+  sourceId: string,
+  options: SnapshotPruneOptions,
+  maxHistoryFiles: number,
+): Promise<SnapshotPruneResult> {
+  if (typeof sourceId !== "string" || !sourceId) throw new TypeError("prune requires a sourceId");
+  const keep = assertPruneOptions(options);
+  const directory = path.join(root, sourceDirName(sourceId));
+  if (!await directoryExists(directory)) return { removed: 0, retained: 0 };
+  const capacityIndex = path.join(directory, "capacity-index");
   const identityIndex = path.join(directory, "identity-index");
-  await ensureRealDirectory(identityIndex);
-  await writeIdentityIndex(
-    path.join(identityIndex, `${snapshotIdentityDigest(snapshot)}.txt`),
-    filename,
-  );
+  const release = await acquireSourceLock(directory);
+  try {
+    await testOnlySnapshotStoreIo.insideSourceLock?.("prune");
+    await removeLockLeftovers(directory);
+    for (const each of [directory, capacityIndex, identityIndex]) await removeTemporaryFiles(each);
+    await removeOrphanIdentityEntries(directory, maxHistoryFiles);
+
+    const history = await readAllSnapshotEntries(root, sourceId, maxHistoryFiles);
+    const recordNames = new Set(history.flatMap((entry) => entry.names));
+    const slotsByRecord = await readCapacitySlots(capacityIndex, maxHistoryFiles);
+    for (const [recordName, slots] of slotsByRecord) {
+      if (recordNames.has(recordName)) continue;
+      for (const slot of slots) await unlinkIfPresent(path.join(capacityIndex, slot));
+      slotsByRecord.delete(recordName);
+    }
+    const { retained, victims } = selectPruneVictims(history, (entry) => entry.snapshot, options.keepLast, keep);
+    await testOnlySnapshotStoreIo.afterPruneScan?.();
+
+    for (const { snapshot, names } of victims) {
+      for (const name of names) await unlinkIfPresent(path.join(directory, name));
+      await unlinkIfPresent(path.join(identityIndex, `${snapshotIdentityDigest(snapshot)}.txt`));
+      for (const name of names) {
+        for (const slot of slotsByRecord.get(name) ?? []) await unlinkIfPresent(path.join(capacityIndex, slot));
+      }
+    }
+
+    for (const { snapshot, names } of retained) {
+      for (const name of names) {
+        if (!ENVELOPE_RECORD_FILE.test(name)) continue;
+        if (!slotsByRecord.has(name)) await reserveCapacitySlot(capacityIndex, name, maxHistoryFiles);
+        const identityFile = path.join(identityIndex, `${snapshotIdentityDigest(snapshot)}.txt`);
+        if (!await regularFileExists(identityFile)) {
+          await ensureRealDirectory(identityIndex);
+          await writeIdentityIndex(identityFile, name);
+        }
+      }
+    }
+    await syncDirectoryIfPresent(directory);
+    await syncDirectoryIfPresent(identityIndex);
+    await syncDirectoryIfPresent(capacityIndex);
+    return { removed: victims.length, retained: retained.length };
+  } finally {
+    await release();
+  }
+}
+
+async function directoryExists(directory: string): Promise<boolean> {
+  try {
+    const stat = await lstat(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw snapshotCorrupt("non-regular-entry");
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 async function findExactFilesystemSnapshot(
@@ -1010,7 +1335,7 @@ async function findExactFilesystemSnapshot(
 
 export function createFilesystemSnapshotStore(
   options: FilesystemSnapshotStoreOptions,
-): VerifiedHeadSnapshotStore {
+): VerifiedHeadSnapshotStore & PrunableSnapshotStore {
   const root = path.resolve(options.root);
   const maxHistoryFiles = resolveMaxHistoryFiles(options.maxHistoryFiles);
 
@@ -1072,9 +1397,7 @@ export function createFilesystemSnapshotStore(
 
   return {
     put: (snapshot) => persistFilesystemSnapshot(root, snapshot, maxHistoryFiles),
-    async latest(sourceId) {
-      return (await readAllSnapshots(root, sourceId, maxHistoryFiles))[0];
-    },
+    latest: (sourceId) => readLatestSnapshot(root, sourceId, maxHistoryFiles),
     async get(sourceId, bodyHash) {
       return (await readAllSnapshots(root, sourceId, maxHistoryFiles)).find(
         (snapshot) =>
@@ -1084,6 +1407,7 @@ export function createFilesystemSnapshotStore(
     },
     list: (sourceId) => readAllSnapshots(root, sourceId, maxHistoryFiles),
     findExact: (reference) => findExactFilesystemSnapshot(root, reference),
+    prune: (sourceId, options) => pruneFilesystemSnapshots(root, sourceId, options, maxHistoryFiles),
     readVerifiedHead,
     compareHeadWitness,
   };
@@ -1093,7 +1417,7 @@ function cloneSnapshot(snapshot: Snapshot): Snapshot {
   return canonicalDurableSnapshot(snapshot);
 }
 
-export function createInMemorySnapshotStore(): ExactSnapshotStore {
+export function createInMemorySnapshotStore(): ExactSnapshotStore & PrunableSnapshotStore {
   const bySource = new Map<string, Snapshot[]>();
   const byIdentity = new Map<string, Snapshot>();
   const byEnvelope = new Map<string, Snapshot>();
@@ -1122,6 +1446,27 @@ export function createInMemorySnapshotStore(): ExactSnapshotStore {
     },
     async list(sourceId) {
       return sorted(sourceId).map(cloneSnapshot);
+    },
+    async prune(sourceId, options) {
+      const keep = assertPruneOptions(options);
+      const { retained, victims } = selectPruneVictims(sorted(sourceId), (snapshot) => snapshot, options.keepLast, keep);
+      const removed = new Set(victims);
+      const remaining = (bySource.get(sourceId) ?? []).filter((snapshot) => !removed.has(snapshot));
+      bySource.set(sourceId, remaining);
+      // A snapshot put twice has two entries; keep lookups for a surviving copy.
+      for (const snapshot of victims) {
+        const identity = snapshotIdentityDigest(snapshot);
+        const envelope = snapshotEnvelopeDigest(snapshot);
+        const survivor = remaining.find((candidate) => snapshotEnvelopeDigest(candidate) === envelope);
+        if (survivor === undefined) {
+          byIdentity.delete(identity);
+          byEnvelope.delete(envelope);
+        } else {
+          byIdentity.set(identity, survivor);
+          byEnvelope.set(envelope, survivor);
+        }
+      }
+      return { removed: victims.length, retained: retained.length };
     },
     async findExact(reference) {
       assertExactLookup(reference);

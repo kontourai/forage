@@ -152,12 +152,53 @@ later history reads fail. Applications with a lower retention ceiling can pass
 Capacity decisions use deterministic, exclusive filesystem slot reservations,
 so cooperating store instances and processes cannot consume the same remaining
 slot. A process interrupted after reservation can complete the same immutable
-snapshot idempotently on retry. The store does not silently delete evidence.
+snapshot idempotently on retry. At the ceiling, `put()` rejects with
+`SnapshotHistoryFullError` (`code: "history-full"`).
+
+The store deletes nothing on its own. `prune(sourceId, { keepLast, keep })`
+applies an explicit retention rule: it keeps the newest `keepLast` snapshots,
+every snapshot matching a `keep` reference (for example, every snapshot the
+caller still cites), and always the head, even for `keepLast: 0`. It removes
+the other records with their identity-index entries and capacity slots, so a
+pruned store verifies cleanly and `put()` succeeds again after pruning a full
+store. The in-memory store implements the same rule.
+
+Every `put()` and `prune()` of one source holds a per-source write lock,
+`source.lock` in the source directory, for its critical section; readers never
+take it. **Every process that writes to a store must run a forage version that
+takes this lock.** A prune removes temporary files and capacity slots that name
+no record, so an older, unlocked writer that is still running can lose data.
+
+The lock records its owner's machine identity (the hostname, plus on Linux the
+boot id and pid namespace), pid, and process start time, and the owner
+refreshes its mtime every 10 seconds. Another process breaks the lock when it
+has not been refreshed for 60 seconds, or when the owner has the same machine
+identity and its pid has exited or now belongs to a process that started at a
+different time. A lock from another machine or pid namespace, or one whose
+identity cannot be read, is judged by age alone. A writer waits up to 90
+seconds for the lock, then fails with `snapshot-store-error` (reason
+`store-busy`). The limits of this scheme (a blocked event loop, clock skew
+between machines, lock-free readers) are listed in `src/source-lock.ts`.
+
+Because no write is in flight while a prune holds the lock, each prune first
+removes everything an interrupted write can leave: temporary files, capacity
+slots and identity entries that name no record, and markers of lock breakers
+that died. It also gives a retained record back a missing identity entry or
+capacity slot.
+
+`latest()` picks the head from record filenames and reads only the head's
+record, so its cost does not grow with history length. It does so when every
+record filename carries an ISO-8601 UTC `fetchedAt`, which is what
+`fetchSource()` produces; otherwise it reads the whole history as `list()`
+does. To keep those filenames unambiguous, `put()` rejects a `fetchedAt` that
+looks like ISO-8601 but uses other separators.
 
 Filesystem reads are fail-closed. If an owned snapshot record is malformed,
-has a digest mismatch, or belongs to a different source, `list`, `latest`, and
-`get` reject with `SnapshotStoreReadError` whose safe `code` is
+has a digest mismatch, or belongs to a different source, `list` and `get`
+reject with `SnapshotStoreReadError` whose safe `code` is
 `"snapshot-corrupt"`; storage/race failures use `"snapshot-store-error"`.
+`latest` verifies the record(s) it reads the same way and rejects when the head
+is corrupt; it does not read, and so does not report, older records.
 They never silently substitute a partial history or an empty baseline. Exact
 reference resolution and replay return the same distinction through their
 typed result errors (`snapshot-corrupt` versus `snapshot-store-error`) without
