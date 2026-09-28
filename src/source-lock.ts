@@ -28,21 +28,32 @@
  *
  * Breakers take turns through an exclusive `source.lock.break` marker, which
  * obeys the same staleness rules. A file is only ever removed if it is still
- * the exact file that was judged stale: it is renamed aside (only one caller
- * can get it), compared by inode, size, mtime and contents, and linked back if
- * it differs.
+ * the file that was judged stale: it is renamed aside (only one caller can get
+ * it), compared, and linked back if it differs. A readable lock or marker is
+ * compared by inode and contents only, since its unique token identifies it
+ * and its holder's heartbeat moves the mtime; a file too large to read, or a
+ * symlink, is compared by inode, size and mtime.
  *
  * Accepted gaps:
  *
  * - A holder whose event loop is blocked for longer than `staleMs`, or that is
- *   stopped and later resumed, can lose its lock while still writing.
+ *   stopped and later resumed, can lose its lock while still writing. Because
+ *   a readable lock is not compared by mtime, a breaker that judged it stale
+ *   still removes it if the resumed holder's heartbeat refreshes it in between.
  * - Across machines, staleness is judged by age alone, and clock skew of more
  *   than `staleMs` between machines can make a live lock look stale.
  * - Readers take no lock, so a list, get, or full-scan latest running during a
  *   prune can fail transiently with `record-disappeared`.
- * - If two breakers disagree about one file, another process could create
- *   that file in the instant it is renamed aside; the break marker serializes
- *   breakers, so this needs a dead breaker's marker as well.
+ * - Another process could create a lock or marker in the instant a remover
+ *   has renamed a different one aside; the link back then fails and the new
+ *   file is removed while its owner holds it. Two routes reach this:
+ *   - two breakers disagree about one file; the break marker serializes
+ *     breakers, so this needs a dead breaker's marker as well;
+ *   - a release runs after its lock was broken (the first gap above) and a new
+ *     holder acquired it: release reads its own lock, a breaker removes it, the
+ *     new holder creates one, release renames that aside, and a third process
+ *     creates a lock before the link back. Release takes no marker, so the
+ *     marker does not close this route.
  */
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -301,7 +312,8 @@ export async function removeIfUnchanged(file: string, judged: LockFileState): Pr
       await link(aside, file);
     } catch (error) {
       // Residual: another process created the file in the instant it was
-      // aside. Only reachable when two breakers disagree about one file.
+      // aside. Reachable when two breakers disagree about one file, or when a
+      // release races a breaker and a new holder (see the header).
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
     return false;

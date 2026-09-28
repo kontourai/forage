@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { fork, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, lutimes, mkdir, mkdtemp, readdir, readFile, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { lstat, lutimes, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, unlink, utimes, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -20,9 +20,11 @@ import {
 import { canonicalDurableSnapshot, snapshotEnvelopeDigest } from "../src/provenance.js";
 import { testOnlySnapshotStoreIo } from "../src/snapshot-store.js";
 import {
+  acquireSourceLock,
   processStartIdentity,
   readLockFileState,
   removeIfUnchanged,
+  SOURCE_LOCK,
   sourceLockTiming,
   testOnlySourceLockIo,
 } from "../src/source-lock.js";
@@ -579,6 +581,30 @@ describe("source lock: stale owners", () => {
       assert.equal(await readFile(file, "utf8"), "a fresh marker written after the stale one was judged");
       assert.equal(await removeIfUnchanged(file, (await readLockFileState(file))!), true);
       assert.deepEqual(await readdir(root), []);
+    });
+  });
+});
+
+describe("source lock: real machine identity", () => {
+  // Every other lock test stubs the machine identity. This one reads it from
+  // the OS, so a regression to a hostname-only identity on Linux (which lets a
+  // second pid namespace with the same hostname break a live lock) fails here.
+  // It needs /proc, so it is skipped, and reported as skipped, elsewhere.
+  it("records the hostname, boot id and pid namespace on Linux", {
+    skip: process.platform !== "linux" && "reads /proc; Linux only",
+  }, async () => {
+    assert.equal(testOnlySourceLockIo.machineIdentity, undefined, "precondition: identity is not stubbed");
+    await withRoot(async (root) => {
+      const release = await acquireSourceLock(root);
+      try {
+        const { machine } = JSON.parse(await readFile(path.join(root, SOURCE_LOCK), "utf8")) as { machine: unknown };
+        assert.equal(typeof machine, "string");
+        assert.match(machine as string, /\|boot:.+\|pid:\[\d+\]$/);
+        const bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+        assert.equal(machine, `host:${hostname()}|boot:${bootId}|${await readlink("/proc/self/ns/pid")}`);
+      } finally {
+        await release();
+      }
     });
   });
 });
