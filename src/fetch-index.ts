@@ -37,7 +37,10 @@ export {
   buildSnapshotSourceRef,
   parseSnapshotSourceRef,
   resolveSnapshotSourceRef,
+  snapshotHashBasis,
 } from "./provenance.js";
+export { decodeTextBody, parseDeclaredCharset } from "./text-body.js";
+export type { DecodedTextBody, DeclaredCharset } from "./text-body.js";
 export type {
   ParsedSnapshotSourceRef,
   SnapshotSourceRefResolution,
@@ -51,6 +54,7 @@ export type {
   ReadVerifiedHeadResult,
   HeadWitnessComparisonResult,
   Snapshot,
+  SnapshotHashBasis,
   SnapshotLookup,
   SnapshotStore,
 } from "./types.js";

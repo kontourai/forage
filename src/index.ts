@@ -14,6 +14,7 @@ export type {
   CrawlManifest,
   Page,
   Snapshot,
+  SnapshotHashBasis,
   ExactSnapshotLookupResult,
   ExactSnapshotStore,
   VerifiedHeadSnapshotStore,
@@ -34,6 +35,9 @@ export {
   createInMemorySnapshotStore,
 } from "./snapshot-store.js";
 export type { FilesystemSnapshotStoreOptions } from "./snapshot-store.js";
+export { snapshotHashBasis } from "./provenance.js";
+export { decodeTextBody, parseDeclaredCharset } from "./text-body.js";
+export type { DecodedTextBody, DeclaredCharset } from "./text-body.js";
 export {
   SnapshotStoreReadError,
   isSnapshotStoreReadError,

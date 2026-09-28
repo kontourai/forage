@@ -69,7 +69,9 @@ when the fetched URL redirected.
   refused. This is the pin-not-just-check property most SSRF filters miss.
 - **Deterministic replay.** Every fetched page is snapshotted with a `sourceRef`;
   `mode: "replay"` re-serves snapshots byte-identically, network-free — so
-  downstream extraction is reproducible and offline-testable.
+  downstream extraction is reproducible and offline-testable. Text snapshots
+  keep their raw bytes and declared charset and hash the bytes; the text is a
+  view derived from them (see README, "Text bodies").
 - **Fail-closed snapshot reads.** A corrupt owned filesystem record is never
   silently skipped to fabricate a partial or empty replay baseline. Native
   store reads throw a safe typed `SnapshotStoreReadError`; consumer-facing
