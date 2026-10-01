@@ -9,22 +9,22 @@ importers:
   .:
     devDependencies:
       '@ai-sdk/provider':
-        specifier: 4.0.4
-        version: 4.0.4
+        specifier: 4.0.18
+        version: 4.0.18
       '@kontourai/flow-agents':
         specifier: 5.9.0
-        version: 5.9.0(@ai-sdk/provider@4.0.4)(typescript@7.0.2)
+        version: 5.9.0(@ai-sdk/provider@4.0.18)(typescript@7.0.2)
       '@types/node':
         specifier: ^26.1.1
-        version: 26.1.2
+        version: 26.6.3
       typescript:
         specifier: '>=5.0.0'
         version: 7.0.2
 
 packages:
 
-  '@ai-sdk/provider@4.0.4':
-    resolution: {integrity: sha512-tbHKNLirllUNF3ZlkCsXnwab2ZV1Sl4b1H/Cp9ruCce15IBmskE8Gwkk0yo9xDWY+jho2of7lVXtwSsyrq7cwQ==}
+  '@ai-sdk/provider@4.0.18':
+    resolution: {integrity: sha512-+GZJIgz1jk86pwEbb3f1BD2bdoSKyWE4Jg4YUc7NMnMozbWemSKYZcw2F4nMaO5qwsL5A8RmioAKW81YktRpIQ==}
     engines: {node: '>=22'}
 
   '@anthropic-ai/sdk@0.74.0':
@@ -297,8 +297,8 @@ packages:
     resolution: {integrity: sha512-qv7+G3J2cc6wwFj3yKvXOamzqhMwSk1ogPGmhpS8iXllcPrJaIIBA+4HbttlHVu1pqWTdmaCH/WE7UOC51kdoA==}
     engines: {node: ^20.17.0 || >=22.9.0}
 
-  '@types/node@26.1.2':
-    resolution: {integrity: sha512-Vu4a5UFA9rIIFJ7rB/Vaafh9lrCQszopTCx6KjFboXTGQbPNasehVR5TEiithSDGyd1DEiUByggTZsg8jukeIg==}
+  '@types/node@26.6.3':
+    resolution: {integrity: sha512-dsqMQQoeTLqu9wynDD00q573mNzso3IdQOAfHRJqLCcmCFPoGo9A1bDpUcv/9tnKpErQWv9uKeGfl37EIS02Yg==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -632,15 +632,15 @@ packages:
     engines: {node: '>=16.20.0'}
     hasBin: true
 
-  undici-types@8.3.0:
-    resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
+  undici-types@8.9.0:
+    resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
   yallist@4.0.0:
     resolution: {integrity: sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A==}
 
 snapshots:
 
-  '@ai-sdk/provider@4.0.4':
+  '@ai-sdk/provider@4.0.18':
     dependencies:
       json-schema: 0.4.0
 
@@ -735,20 +735,20 @@ snapshots:
 
   '@kontourai/conduit@0.2.1': {}
 
-  '@kontourai/dispatch@0.3.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)':
+  '@kontourai/dispatch@0.3.0(@ai-sdk/provider@4.0.18)(@anthropic-ai/sdk@0.74.0)':
     dependencies:
-      '@kontourai/relay': 0.2.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)
+      '@kontourai/relay': 0.2.0(@ai-sdk/provider@4.0.18)(@anthropic-ai/sdk@0.74.0)
     optionalDependencies:
-      '@ai-sdk/provider': 4.0.4
+      '@ai-sdk/provider': 4.0.18
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
 
-  '@kontourai/flow-agents@5.9.0(@ai-sdk/provider@4.0.4)(typescript@7.0.2)':
+  '@kontourai/flow-agents@5.9.0(@ai-sdk/provider@4.0.18)(typescript@7.0.2)':
     dependencies:
       '@kontourai/conduit': 0.2.1
-      '@kontourai/dispatch': 0.3.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)
+      '@kontourai/dispatch': 0.3.0(@ai-sdk/provider@4.0.18)(@anthropic-ai/sdk@0.74.0)
       '@kontourai/flow': 3.9.0
-      '@kontourai/relay': 0.4.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)
+      '@kontourai/relay': 0.4.0(@ai-sdk/provider@4.0.18)(@anthropic-ai/sdk@0.74.0)
       '@kontourai/survey': 2.0.0(typescript@7.0.2)
       esbuild: 0.28.1
     optionalDependencies:
@@ -772,15 +772,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@kontourai/relay@0.2.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)':
+  '@kontourai/relay@0.2.0(@ai-sdk/provider@4.0.18)(@anthropic-ai/sdk@0.74.0)':
     dependencies:
-      '@ai-sdk/provider': 4.0.4
+      '@ai-sdk/provider': 4.0.18
     optionalDependencies:
       '@anthropic-ai/sdk': 0.74.0
 
-  '@kontourai/relay@0.4.0(@ai-sdk/provider@4.0.4)(@anthropic-ai/sdk@0.74.0)':
+  '@kontourai/relay@0.4.0(@ai-sdk/provider@4.0.18)(@anthropic-ai/sdk@0.74.0)':
     dependencies:
-      '@ai-sdk/provider': 4.0.4
+      '@ai-sdk/provider': 4.0.18
     optionalDependencies:
       '@anthropic-ai/sdk': 0.74.0
 
@@ -848,9 +848,9 @@ snapshots:
       '@sigstore/protobuf-specs': 0.5.1
     optional: true
 
-  '@types/node@26.1.2':
+  '@types/node@26.6.3':
     dependencies:
-      undici-types: 8.3.0
+      undici-types: 8.9.0
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
@@ -1225,7 +1225,7 @@ snapshots:
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
 
-  undici-types@8.3.0: {}
+  undici-types@8.9.0: {}
 
   yallist@4.0.0:
     optional: true
