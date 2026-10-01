@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/kontourai/forage/compare/v1.0.0...v1.0.1) (2026-09-28)
+
+
+### Fixes
+
+* **store:** correct source-lock comments and test the Linux machine identity ([#80](https://github.com/kontourai/forage/issues/80)) ([7cce1be](https://github.com/kontourai/forage/commit/7cce1be76583972d278ec96d9600edd5d26097bb)), closes [#78](https://github.com/kontourai/forage/issues/78)
+
 ## [1.0.0](https://github.com/kontourai/forage/compare/v0.7.0...v1.0.0) (2026-09-28)
 
 
