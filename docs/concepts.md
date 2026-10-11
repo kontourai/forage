@@ -60,9 +60,10 @@ forage ships no AI; `shouldFollow` is where a consumer could plug scoring in.
 
 ## Guarded egress
 
-Every request forage makes goes through a guarded `fetch`. The guard is on by
-default; `egress: { guarded: false }` turns it off for plain HTTP requests, but
-browser rendering is always guarded. For each
+By default, every request forage makes goes through a guarded `fetch`.
+`egress: { guarded: false }`, or a caller-supplied `fetch` in
+`FetchSourceOptions`, replaces it for plain HTTP requests; browser rendering
+is always guarded. For each
 request, and again for each redirect hop, it:
 
 - accepts only `http:` and `https:` URLs without credentials, on the default

@@ -204,13 +204,13 @@ failure. It reads `options.store` but never writes to it.
 | `url` | required | An `http:` or `https:` URL. |
 | `egress` | required | An [EgressPolicy](#egresspolicy). |
 | `minDelayMs` | `1000` | Minimum time between requests to one origin. |
-| `timeoutMs` | `15000` | Per-request timeout, also passed to the renderer (so a render inside `fetchSource()` gets 15 s, not the renderer's own 30 s default). |
+| `timeoutMs` | `15000` | Per-request timeout. The renderer gets the same value per navigation attempt, not its own 30 s default; a render that falls back from `networkidle` to `domcontentloaded` can take up to twice this. |
 | `retries` | `2` | Retries for timeouts, network errors, 429, and 5xx. Capped at 5. |
 | `headers` | none | Extra request headers. |
 | `userAgent` | forage default | The `User-Agent` header. |
 | `respectRobots` | `true` | Check robots.txt. Unreachable, 429, and 5xx robots.txt responses are treated as allow-all, with a warning. Rules match by plain path prefix; `*` and `$` wildcards are not supported. |
 | `render` | `false` | `true` always renders; `"on-shell"` renders a JavaScript shell. |
-| `revalidate` | `true` | Send `If-None-Match` and `If-Modified-Since` from the latest stored snapshot of the same URL. Set `false` when you need a body every time. |
+| `revalidate` | `true` | Send `If-None-Match` and `If-Modified-Since` from the source's latest stored snapshot (read from `options.store`), when its URL is the one being requested. Set `false` when you need a body every time. |
 
 #### FetchSourceOptions
 
