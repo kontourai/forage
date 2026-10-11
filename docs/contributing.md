@@ -23,7 +23,7 @@ pnpm resolves them into the lockfile.
 | `npm run typecheck` | `tsc --noEmit`. |
 | `npm test` | Builds, then runs the compiled tests with `node --test` through `scripts/run-tests.mjs`. |
 | `npm run test:release-tag-ancestry` | Self-test of `scripts/check-release-tag-ancestry.sh`. |
-| `npm run verify` | `typecheck`, `test`, and `test:release-tag-ancestry`. CI and Trust Verify run this. |
+| `npm run verify` | `typecheck`, `test`, and `test:release-tag-ancestry`. CI runs this. |
 | `npm run docs:check` | The docs gate: links, anchors, reachability, and topics in `docs-kit.json`. |
 | `npm run docs:build` | Builds the docs site and `docs-bundle.json` into `dist-pages/`. |
 
@@ -55,7 +55,7 @@ On every pull request, CI runs:
 - **verify** on Node 22 and 24;
 - **Publish path (dry run)**: `npm publish --dry-run` from a pnpm-installed
   tree, with no credentials;
-- **Secret Scan**, **Trust Verify**, **Veritas Advisory Governance**, and the
+- **Secret Scan**, **Veritas Advisory Governance**, and the
   **Docs** gate.
 
 Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, and so
