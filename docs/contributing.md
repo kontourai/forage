@@ -52,7 +52,7 @@ in the same pull request. A new Markdown file under `docs/` must be added to
 
 On every pull request, CI runs:
 
-- **verify** on Node 22 and 24 (the required checks);
+- **verify** on Node 22 and 24;
 - **Publish path (dry run)**: `npm publish --dry-run` from a pnpm-installed
   tree, with no credentials;
 - **Secret Scan**, **Trust Verify**, **Veritas Advisory Governance**, and the

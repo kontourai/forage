@@ -4,11 +4,13 @@
 `page.warnings`). A page-level failure reads
 `[depth N] <url>: <kind>: <message>`, where `<kind>` is a
 [fetch error kind](reference.md#fetcherrorkind). `fetchSource()` returns the
-same kinds in `result.error.kind`.
+same kinds in `result.error.kind`, except the replay-only `no-snapshot`,
+`snapshot-corrupt`, and `snapshot-store-error`.
 
 ## A crawl returns no pages
 
-Read `manifest.warnings`. The seed's failure is the first page-level warning.
+Read `manifest.warnings` for the `[depth 0] <seed>:` line that names an error
+kind. Fail-open robots.txt warnings and sitemap warnings can come before it.
 The usual causes:
 
 - **`egress-denied`**: the guard refused the seed. The message names the code,
@@ -34,9 +36,10 @@ The usual causes:
 
 `testOnlyAllowedLoopbackOrigins` entries must be exact origins such as
 `http://127.0.0.1:4173`: `http:`, an explicit port, and a host of `127.0.0.1`
-or `[::1]`. Anything else, including `localhost`, is an
-`InvalidCrawlConfigError`. `egress: { guarded: false }` turns the guard off
-entirely; do not use it for URLs you do not control.
+or `[::1]`. In `crawl()`, anything else, including `localhost`, is an
+`InvalidCrawlConfigError`; `fetchSource()` returns it as a `network` error.
+`egress: { guarded: false }` turns the guard off for plain HTTP requests
+(rendering stays guarded); do not use it for URLs you do not control.
 
 ## A redirect is refused
 

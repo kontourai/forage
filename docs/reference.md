@@ -27,7 +27,7 @@ reported in `CrawlManifest.warnings`.
 | `url` | `string` | Required. An absolute `http:` or `https:` URL. Its fragment is dropped. |
 | `render` | `boolean` | Render the seed page (depth 0) in a browser. Other pages follow `policy.render`. |
 | `headers` | `Record<string, string>` | Extra request headers. Sent only to URLs on the seed's origin. |
-| `userAgent` | `string` | The `User-Agent` for plain requests and robots.txt matching. The default is `kontourai-forage-bot/0.x (...)` with a placeholder contact, so set your own. |
+| `userAgent` | `string` | The `User-Agent` for plain requests and robots.txt matching. The browser renderer always sends forage's own user agent and does not use `userAgent` or `headers`. The default is `kontourai-forage-bot/0.x (...)` with a placeholder contact, so set your own. |
 
 #### CrawlPolicy
 
@@ -35,7 +35,7 @@ reported in `CrawlManifest.warnings`.
 | --- | --- | --- |
 | `maxPages` | `20` | Maximum acquisition attempts, failed ones included. Capped at 500 and rounded down. |
 | `maxDepth` | `2` | Maximum link depth; the seed is depth 0. Capped at 10 and rounded down. |
-| `sameHost` | `true` | Queue only links on the seed's origin. |
+| `sameHost` | `true` | Queue only links on the seed's origin. Sitemap page URLs are always limited to the seed's host, whatever this is set to. |
 | `discovery` | `"links"` | `"links"` follows `<a href>`, `"sitemap"` reads sitemaps and follows no links, `"both"` does both. |
 | `render` | `"never"` | `"on-shell"` renders pages that look like a JavaScript shell; `"always"` renders every page. |
 | `politeness.delayMs` | `1000` | Minimum time between requests to one origin. |
@@ -43,17 +43,19 @@ reported in `CrawlManifest.warnings`.
 | `robots` | `true` | Honor robots.txt. |
 | `egress` | `{ guarded: true }` | See [EgressPolicy](#egresspolicy). |
 | `mode` | `"live"` | `"replay"` serves every page from `store` with no network. Requires `store`. |
-| `store` | none | A `SnapshotStore`. In live mode every acquired page is put into it. |
+| `store` | none | A `SnapshotStore`. In live mode every acquired page is put into it, and so are the robots.txt and sitemap documents that sitemap discovery reads. |
 | `shouldFollow` | none | Accepted, but not used yet. Setting it adds a warning. |
 
 Numbers must be finite and non-negative. Sitemap discovery runs only when
-`maxPages` is above 1 and `maxDepth` is at least 1.
+`maxPages` is above 1 and `maxDepth` is at least 1, and accepts at most
+`maxPages` page URLs. `crawl()` has no response-size option.
 
 #### CrawlManifest and Page
 
 `CrawlManifest` has `seed` (the normalized seed URL), `pages`, `truncated`
 (true when URLs were still queued at the `maxPages` cap), `warnings`, and,
-when sitemap discovery ran, `sitemap: { documentsRead, urlsDiscovered }`.
+when `discovery` is `"sitemap"` or `"both"`, `sitemap: { documentsRead, urlsDiscovered }`
+(zeros when discovery was skipped).
 
 Each `Page` has `url` (after redirects), `status`, `body`, `snapshot`,
 `sourceRef`, `depth`, `rendered`, and its own `warnings`.
@@ -62,7 +64,7 @@ Each `Page` has `url` (after redirects), `status`, `body`, `snapshot`,
 
 | Field | Meaning |
 | --- | --- |
-| `guarded` | `true` routes every request through the guard. `false` uses `globalThis.fetch` with no SSRF protection. |
+| `guarded` | `true` routes every plain HTTP request through the guard. `false` uses `globalThis.fetch` with no SSRF protection for those requests. Browser rendering is always guarded. |
 | `testOnlyAllowedLoopbackOrigins` | Exact `http://127.0.0.1:<port>` or `http://[::1]:<port>` origins the guard may reach, for local test servers. |
 
 ### Snapshot stores
@@ -202,11 +204,11 @@ failure. It reads `options.store` but never writes to it.
 | `url` | required | An `http:` or `https:` URL. |
 | `egress` | required | An [EgressPolicy](#egresspolicy). |
 | `minDelayMs` | `1000` | Minimum time between requests to one origin. |
-| `timeoutMs` | `15000` | Per-request timeout, also passed to the renderer. |
+| `timeoutMs` | `15000` | Per-request timeout, also passed to the renderer (so a render inside `fetchSource()` gets 15 s, not the renderer's own 30 s default). |
 | `retries` | `2` | Retries for timeouts, network errors, 429, and 5xx. Capped at 5. |
 | `headers` | none | Extra request headers. |
 | `userAgent` | forage default | The `User-Agent` header. |
-| `respectRobots` | `true` | Check robots.txt. Unreachable, 429, and 5xx robots.txt responses are treated as allow-all, with a warning. |
+| `respectRobots` | `true` | Check robots.txt. Unreachable, 429, and 5xx robots.txt responses are treated as allow-all, with a warning. Rules match by plain path prefix; `*` and `$` wildcards are not supported. |
 | `render` | `false` | `true` always renders; `"on-shell"` renders a JavaScript shell. |
 | `revalidate` | `true` | Send `If-None-Match` and `If-Modified-Since` from the latest stored snapshot of the same URL. Set `false` when you need a body every time. |
 
@@ -216,7 +218,7 @@ failure. It reads `options.store` but never writes to it.
 | --- | --- |
 | `fetch` | A `FetchLike` to use instead of the guard. |
 | `store` | A `SnapshotStore` read for revalidation. |
-| `maxResponseBytes` | A positive integer ceiling on the body, applied to declared lengths, streamed bodies, and rendered HTML. |
+| `maxResponseBytes` | A positive integer ceiling on the body kept. A larger declared `Content-Length` fails early. Otherwise the body is checked as it is read, but the guard downloads the whole response before returning it, so with the guard this limits what is kept, not what is downloaded. Rendered HTML over the limit falls back to the plain snapshot with a warning. |
 | `renderImpl` | A `RenderImpl` to use instead of loading `playwright`. |
 | `now`, `clock`, `sleep`, `random`, `schedule` | Injectable time and randomness, for tests. |
 | `politenessState`, `robotsCache` | Maps that share politeness timing and robots.txt rules across calls. They default to process-wide maps. |
@@ -226,7 +228,7 @@ failure. It reads `options.store` but never writes to it.
 | Kind | Cause |
 | --- | --- |
 | `invalid-config` | Missing `id`, or an invalid `maxResponseBytes`. |
-| `invalid-url` | The URL, or a redirect target, is invalid or not HTTP. |
+| `invalid-url` | The URL is invalid or not HTTP, or a redirect `Location` does not parse. |
 | `robots-denied` | robots.txt disallows the path for your user agent's product token. |
 | `timeout` | The request did not finish within `timeoutMs`, after retries. |
 | `network` | A transport failure, or a redirect to another host or from `https:` to `http:`. |

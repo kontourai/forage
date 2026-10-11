@@ -40,7 +40,8 @@ breadth-first frontier, one URL at a time:
 
 The result is a `CrawlManifest`: the pages, a `truncated` flag that is true
 when URLs were still queued at the cap, crawl-level `warnings`, and, when
-sitemap discovery ran, `sitemap.documentsRead` and `sitemap.urlsDiscovered`.
+`discovery` is `"sitemap"` or `"both"`, `sitemap.documentsRead` and
+`sitemap.urlsDiscovered`.
 
 ### Never-throws
 
@@ -48,7 +49,7 @@ Operational failures never abort a crawl. A denied address, a robots refusal,
 a timeout, an HTTP error, a failed `store.put`, or a parse problem becomes a
 warning prefixed with the page's depth and URL, and the crawl moves on. A
 crawl whose seed is refused returns an empty `pages` list and a warning that
-says why.
+says why, unless sitemap discovery found other pages to fetch.
 
 ### Deferred seams
 
@@ -59,8 +60,9 @@ forage ships no AI; `shouldFollow` is where a consumer could plug scoring in.
 
 ## Guarded egress
 
-Every request forage makes goes through a guarded `fetch` unless the caller
-sets `egress: { guarded: false }`. The guard is on by default. For each
+Every request forage makes goes through a guarded `fetch`. The guard is on by
+default; `egress: { guarded: false }` turns it off for plain HTTP requests, but
+browser rendering is always guarded. For each
 request, and again for each redirect hop, it:
 
 - accepts only `http:` and `https:` URLs without credentials, on the default
@@ -98,9 +100,9 @@ that need one page without a frontier. For each request it:
 - follows up to 5 redirects itself, sending each hop through the guard again
   and re-checking robots.txt (except when rendering). A redirect to another
   host, or from `https:` to `http:`, fails with a `network` error;
-- sends `If-None-Match` and `If-Modified-Since` from the latest stored snapshot
-  of the same source and URL, when a store is supplied and `revalidate` is not
-  `false`. A `304 Not Modified` returns that stored snapshot with
+- sends `If-None-Match` and `If-Modified-Since` from the source's latest
+  stored snapshot, when a store is supplied, `revalidate` is not `false`, and
+  that snapshot's URL is the one being requested. A `304 Not Modified` returns that stored snapshot with
   `notModified: true`.
 
 It returns `{ snapshot?, error?, warnings? }`. It never throws for an
@@ -144,7 +146,9 @@ before 1.0.0.
 A `SnapshotStore` persists and replays snapshots per `sourceId`, with
 `put`, `latest`, `get`, and `list`, and optionally `findExact` and `prune`. In
 live mode with a store, `crawl()` puts every acquired page. In replay mode it
-serves each page from `store.latest()` and makes no network request.
+serves each page from `store.latest()` and makes no network request. With
+sitemap discovery, the robots.txt and sitemap documents are stored and
+replayed the same way, under their own source ids.
 
 forage ships two implementations:
 

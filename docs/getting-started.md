@@ -85,7 +85,8 @@ A `sourceRef` names one exact snapshot. Resolve it against the store, offline:
 ```ts
 import { resolveSnapshotSourceRef } from "@kontourai/forage/fetch";
 
-const replay = await resolveSnapshotSourceRef(store, page.sourceRef);
+// `store` and `live` are from the previous example.
+const replay = await resolveSnapshotSourceRef(store, live.pages[0]!.sourceRef);
 if (!replay.ok) throw new Error(`${replay.error.kind}: ${replay.error.message}`);
 console.log(replay.snapshot.body);
 ```
