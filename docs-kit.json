@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "product": "forage",
+  "title": "Forage",
+  "tagline": "Safe, replayable web crawling for untrusted URLs: SSRF-pinned egress, deterministic replay, and citable snapshots.",
+  "repo": "kontourai/forage",
+  "landing": "README.md",
+  "documents": [
+    { "source": "docs/getting-started.md", "section": "Start Here" },
+    { "source": "docs/concepts.md", "section": "Concepts" },
+    { "source": "DESIGN.md", "section": "Concepts", "title": "Design notes" },
+    { "source": "docs/troubleshooting.md", "section": "Guides" },
+    {
+      "source": "docs/reference.md",
+      "section": "Reference",
+      "covers": ["src/index.ts", "src/egress-index.ts", "src/fetch-index.ts", "src/types.ts"]
+    },
+    { "source": "docs/contributing.md", "section": "Contribute" }
+  ],
+  "topics": [
+    { "id": "first-crawl", "title": "Run a first crawl", "source": "docs/getting-started.md#run-a-first-crawl" },
+    { "id": "crawl-frontier", "title": "How crawl() walks a site", "source": "docs/concepts.md#the-crawl-frontier" },
+    { "id": "guarded-egress", "title": "SSRF and DNS-rebinding-safe egress", "source": "docs/concepts.md#guarded-egress" },
+    { "id": "single-page-fetch", "title": "Single-page fetch, robots, retries, and revalidation", "source": "docs/concepts.md#single-page-fetch" },
+    { "id": "adaptive-rendering", "title": "Adaptive rendering with a pinned browser", "source": "docs/concepts.md#adaptive-rendering" },
+    { "id": "snapshots", "title": "Snapshots, text bytes, and hash basis", "source": "docs/concepts.md#snapshots" },
+    { "id": "provenance-refs", "title": "sourceRef provenance references", "source": "docs/concepts.md#provenance-references" },
+    { "id": "crawl-api", "title": "crawl() options and defaults", "source": "docs/reference.md#crawl" },
+    { "id": "snapshot-stores", "title": "Snapshot store API and limits", "source": "docs/reference.md#snapshot-stores" },
+    { "id": "egress-api", "title": "Guarded fetch API and egress error codes", "source": "docs/reference.md#kontouraiforageegress" },
+    { "id": "fetch-source-api", "title": "fetchSource() options and error kinds", "source": "docs/reference.md#fetchsource" },
+    { "id": "kontour-integration", "title": "How forage fits with traverse, lookout, and campfit", "source": "docs/concepts.md#where-forage-sits" },
+    { "id": "troubleshooting", "title": "Troubleshooting warnings and errors", "source": "docs/troubleshooting.md" }
+  ]
+}

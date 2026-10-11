@@ -1,0 +1,23 @@
+name: Docs
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    uses: kontourai/.github/.github/workflows/docs-gate.yml@main
+  pages:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: gate
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: kontourai/.github/.github/workflows/docs-pages.yml@main
