@@ -2,6 +2,13 @@
 
 **Safe, replayable web crawling for review pipelines — a crawler for _untrusted_ URLs.**
 
+[![npm version](https://img.shields.io/npm/v/%40kontourai%2Fforage)](https://www.npmjs.com/package/@kontourai/forage)
+[![CI](https://github.com/kontourai/forage/actions/workflows/ci.yml/badge.svg)](https://github.com/kontourai/forage/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-kontourai.github.io-blue)](https://kontourai.github.io/forage/)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+[Documentation](https://kontourai.github.io/forage/)
+
 Most crawlers assume *you* pick the sites: trusted seeds, crawl the public web at
 scale, hand the pages downstream. `forage` is for the other job — when the URLs
 come from **somewhere you don't control** (an aggregator's listings, links
