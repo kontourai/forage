@@ -1,5 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "purpose": "Turn untrusted URLs into safely acquired, replayable evidence people can review and cite.",
+  "builtOn": [],
   "product": "forage",
   "title": "Forage",
   "tagline": "Safe, replayable web crawling for untrusted URLs: SSRF-pinned egress, deterministic replay, and citable snapshots.",
