@@ -59,7 +59,7 @@
         "label": "root manifests",
         "patterns": [
           "package.json",
-          "docs-kit.json",
+          "corpus.json",
           "pnpm-lock.yaml",
           "pnpm-workspace.yaml",
           "README.md",

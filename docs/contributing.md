@@ -24,7 +24,7 @@ pnpm resolves them into the lockfile.
 | `npm test` | Builds, then runs the compiled tests with `node --test` through `scripts/run-tests.mjs`. |
 | `npm run test:release-tag-ancestry` | Self-test of `scripts/check-release-tag-ancestry.sh`. |
 | `npm run verify` | `typecheck`, `test`, and `test:release-tag-ancestry`. CI runs this. |
-| `npm run docs:check` | The docs gate: links, anchors, reachability, and topics in `docs-kit.json`. |
+| `npm run docs:check` | The docs gate: links, anchors, reachability, and topics in `corpus.json`. |
 | `npm run docs:build` | Builds the docs site and `docs-bundle.json` into `dist-pages/`. |
 
 `scripts/run-tests.mjs` discovers `dist/tests/**/*.test.js` itself and fails
@@ -41,10 +41,10 @@ accepts a `resolver`.
 
 ## Documentation
 
-Docs are published with docs-kit. `docs-kit.json` lists the published
+Docs are published with Corpus. `corpus.json` lists the published
 documents and the MCP topics agents retrieve. `npm run docs:check` is the
 gate, and the Docs workflow runs it on every pull request. When you change a
-source file that a document `covers` in `docs-kit.json`, update that document
+source file that a document `covers` in `corpus.json`, update that document
 in the same pull request. A new Markdown file under `docs/` must be added to
 `documents` or `exclude`.
 
