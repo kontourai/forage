@@ -12,8 +12,11 @@ npm run verify
 
 Dependency install scripts are blocked by default. Only the packages listed
 under `allowBuilds` in `pnpm-workspace.yaml`, at those exact versions, may run
-one. New versions must be at least 24 hours old (`minimumReleaseAge`) before
-pnpm resolves them into the lockfile.
+one. Third-party versions must be at least 24 hours old (`minimumReleaseAge`),
+including frozen installs that check the lockfile against supply-chain policies.
+Internal `@kontourai/*` releases are exempt so suite releases can be adopted
+immediately. Urgent third-party security fixes require an explicit
+`name@version` exception with a commit rationale.
 
 ## Scripts
 
@@ -38,6 +41,13 @@ Tests live in `tests/` as `*.test.ts` and use `node:test`. Network behaviour is
 tested through injected seams rather than live sites: `fetchSource()` accepts
 a `fetch`, clock, and sleep in `FetchSourceOptions`, and `createGuardedFetch()`
 accepts a `resolver`.
+
+Snapshot-lock ownership tests inject known, unchanged, and unreadable process
+start identities through the internal test seam. This keeps PID-reuse admission
+independent of OS subprocess scheduling; a separate test exercises the real
+platform start-time reader. Unreadable identities retain fresh live locks and
+cache that result for the acquisition. Production lock deadlines and stale-owner
+rules remain unchanged.
 
 ## Documentation
 

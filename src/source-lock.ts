@@ -85,6 +85,8 @@ export const testOnlySourceLockIo = {
   afterStaleJudgement: undefined as undefined | (() => void | Promise<void>),
   /** Runs before the contents of a newly created lock or marker are written. */
   beforeExclusiveWrite: undefined as undefined | ((file: string) => void | Promise<void>),
+  /** Replaces the OS process start-time read for deterministic ownership tests. */
+  processStartIdentity: undefined as undefined | ((pid: number) => Promise<string | undefined>),
   /** Counts process start-time lookups. */
   onStartLookup: undefined as undefined | ((pid: number) => void),
 };
@@ -114,6 +116,7 @@ function processIsAlive(pid: number): boolean {
  */
 export async function processStartIdentity(pid: number): Promise<string | undefined> {
   testOnlySourceLockIo.onStartLookup?.(pid);
+  if (testOnlySourceLockIo.processStartIdentity !== undefined) return testOnlySourceLockIo.processStartIdentity(pid);
   if (process.platform === "linux") {
     try {
       const stat = await readFile(`/proc/${pid}/stat`, "utf8");

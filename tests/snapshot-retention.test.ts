@@ -449,12 +449,53 @@ describe("source lock: stale owners", () => {
     // The pid is alive (it is this test's own), but it started at another time.
     await withLockTiming({ waitMs: 2_000 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
       const { store, directory } = await storeWithRecords(root);
-      assert.ok(await processStartIdentity(process.pid), "precondition: this platform reports process start times");
-      await writeLock(directory, { machine: MACHINE, pid: process.pid, start: "ps-lstart:Thu Jan 1 00:00:00 1970", token: randomUUID() });
-      assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
-      assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      // A second real ps read can time out under load even after a successful
+      // precondition read. Inject the known identity for this ownership test;
+      // the OS reader itself is exercised separately below.
+      testOnlySourceLockIo.processStartIdentity = async (pid) => {
+        assert.equal(pid, process.pid);
+        return "test-start:new-process";
+      };
+      try {
+        await writeLock(directory, { machine: MACHINE, pid: process.pid, start: "test-start:old-process", token: randomUUID() });
+        assert.deepEqual(await store.prune(SOURCE, { keepLast: 1 }), { removed: 2, retained: 1 });
+        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      } finally {
+        testOnlySourceLockIo.processStartIdentity = undefined;
+      }
     })));
   });
+
+  it("reads this platform's real process start identity without a shortened acquisition deadline", async () => {
+    const started = await processStartIdentity(process.pid);
+    if (process.platform === "win32") assert.equal(started, undefined);
+    else assert.match(started ?? "", /^(linux-starttime:|ps-lstart:)/);
+  });
+
+  for (const current of ["test-start:current-process", undefined]) {
+    it(`does not break a fresh live lock when its start identity is ${current === undefined ? "unreadable" : "unchanged"}`, async () => {
+      await withLockTiming({ waitMs: 300 }, () => withMachine(MACHINE, () => withRoot(async (root) => {
+        const { store, directory } = await storeWithRecords(root);
+        const owner = JSON.stringify({ machine: MACHINE, pid: process.pid, start: "test-start:current-process", token: randomUUID() });
+        const file = await writeLock(directory, owner);
+        let lookups = 0;
+        testOnlySourceLockIo.processStartIdentity = async (pid) => {
+          assert.equal(pid, process.pid);
+          lookups += 1;
+          return current;
+        };
+        try {
+          await assertBusyWithinWait(store.prune(SOURCE, { keepLast: 1 }));
+          assert.equal(await readFile(file, "utf8"), owner, "the live owner's lock is preserved");
+          assert.equal(lookups, 1, "including an unreadable result, the read is cached per acquisition");
+        } finally {
+          testOnlySourceLockIo.processStartIdentity = undefined;
+        }
+        await unlink(file);
+        assert.deepEqual(await storeViolations(root, SOURCE, 4, store), []);
+      })));
+    });
+  }
 
   it("judges a lock from another pid namespace, or an unknown machine, by age alone", async () => {
     // Same hostname, different pid namespace: the recorded pid is alive here
