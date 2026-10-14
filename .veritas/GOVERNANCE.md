@@ -6,7 +6,7 @@ Protected Standards require authority-backed review. Do not modify without a fre
 - `.veritas/authority/`
 
 Authority-backed attestations require an explicit human approval reference. Agents may prepare
-`veritas attest ... --approval-ref <ref>` commands, but must not invent the reference or record
+`npx --no @kontourai/veritas attest ... --approval-ref <ref>` commands, but must not invent the reference or record
 the attestation without a durable approval artifact from the human authority.
 
 Standards Growth is additive. Developers and agents may propose:
