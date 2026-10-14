@@ -16,14 +16,15 @@ allowBuilds:
 # (4.0.4), so the installed graph matches package-lock.json entry for entry.
 autoInstallPeers: false
 
-# A newly published version must be at least 24 hours old before it can be
-# resolved into this lockfile. Blunts the most common supply-chain shape (a
-# compromised maintainer publishes and the ecosystem installs within hours).
-# Does not affect installs from an existing lockfile. An urgent security patch
-# is opted in explicitly, by name and version, with the reason in the commit:
-#   minimumReleaseAgeExclude:
-#     - some-package@1.2.3
+# Third-party releases must be at least 24 hours old, including during frozen
+# installs: pnpm checks lockfile entries against supply-chain policies.
+# Internal @kontourai releases are exempt below. Urgent third-party security
+# patches require an explicit name@version exception with a commit rationale.
 minimumReleaseAge: 1440
+
+# Internal releases are available immediately; third-party packages still age.
+minimumReleaseAgeExclude:
+  - '@kontourai/*'
 
 # mise supplies node and pnpm on developer machines; CI installs the exact
 # version pinned in package.json. Do not reject a same-major pnpm from mise.
