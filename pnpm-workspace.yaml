@@ -25,6 +25,10 @@ autoInstallPeers: false
 #     - some-package@1.2.3
 minimumReleaseAge: 1440
 
+# Internal releases are available immediately; third-party packages still age.
+minimumReleaseAgeExclude:
+  - '@kontourai/*'
+
 # mise supplies node and pnpm on developer machines; CI installs the exact
 # version pinned in package.json. Do not reject a same-major pnpm from mise.
 pmOnFail: ignore
