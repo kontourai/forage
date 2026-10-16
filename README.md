@@ -19,7 +19,7 @@ It combines a crawl frontier, guarded network access, and snapshot provenance.
 | Capability | `forage` behavior and limits |
 |---|---|
 | Guarded egress | **On by default.** Resolve and validate the destination, pin the connection to a validated public IP, and revalidate redirect hops. Private, loopback, link-local, and cloud-metadata targets are denied under the default policy. |
-| Crawl policy | Robots and politeness are honored by default; discovery supports links and sitemaps. The frontier currently runs sequentially. |
+| Crawl policy | Robots checks and politeness delays are enabled by default. Robots matching is prefix-only (`*` and `$` are unsupported); unavailable, server-error, oversized, or unreadable robots responses fail open with warnings. See [robots limits](docs/reference.md#fetchsource). Discovery supports links and sitemaps; the frontier currently runs sequentially. |
 | Replay | With a snapshot store, `mode: "replay"` reads captured snapshots without fetching pages again. Replay requires retained snapshots; it does not refresh their content. |
 | Citable snapshots | Each captured page has a `sourceRef`; exact-reference resolution checks the stored snapshot's identity and integrity. A reference identifies captured content, not the truth of a claim made from it. |
 | Rendering | Optional Playwright rendering handles JavaScript shells through pinned browser egress. Missing or failed rendering keeps the plain-fetch snapshot with a warning. |
