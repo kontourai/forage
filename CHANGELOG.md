@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.2](https://github.com/kontourai/forage/compare/v1.0.1...v1.0.2) (2026-10-16)
+
+
+### Documentation
+
+* adopt docs-kit gate, Pages site, and MCP bundle ([#83](https://github.com/kontourai/forage/issues/83)) ([894788f](https://github.com/kontourai/forage/commit/894788fdd4a5d7d12e81760447064e9f365b52de))
+* declare purpose and building blocks in Corpus v2 ([#86](https://github.com/kontourai/forage/issues/86)) ([407d2c2](https://github.com/kontourai/forage/commit/407d2c2094086aa2378973caab2673cd21508642))
+* describe acquisition contracts without crawler caricatures ([#89](https://github.com/kontourai/forage/issues/89)) ([9ff620b](https://github.com/kontourai/forage/commit/9ff620ba6145d103a51e6b513a24de0f54592834))
+* **readme:** add badges and documentation link to header ([#85](https://github.com/kontourai/forage/issues/85)) ([c702f85](https://github.com/kontourai/forage/commit/c702f85315a35dcea7e38bfa6eb69a56a6742ecb))
+
 ## [1.0.1](https://github.com/kontourai/forage/compare/v1.0.0...v1.0.1) (2026-09-28)
 
 
