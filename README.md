@@ -9,36 +9,27 @@
 
 [Documentation](https://kontourai.github.io/forage/)
 
-Most crawlers assume *you* pick the sites: trusted seeds, crawl the public web at
-scale, hand the pages downstream. `forage` is for the other job — when the URLs
-come from **somewhere you don't control** (an aggregator's listings, links
-discovered mid-crawl, user submissions) and the pages become **evidence a human
-will review and cite.**
+`forage` acquires pages from **untrusted, attacker-influenced URLs** — an
+aggregator's listings, links discovered mid-crawl, or user submissions — and
+records snapshots that a downstream application can replay and cite in review.
+It combines a crawl frontier, guarded network access, and snapshot provenance.
 
-That job sits at the intersection of three tools that normally don't come
-together, and `forage` is that intersection:
+## Acquisition, replay, and provenance
 
-- a **crawler** (frontier, robots, politeness, sitemaps, adaptive rendering),
-- a **security proxy** (SSRF + DNS-rebinding-safe egress, on by default), and
-- a **provenance layer** (deterministic snapshots you can replay and cite).
+| Capability | `forage` behavior and limits |
+|---|---|
+| Guarded egress | **On by default.** Resolve and validate the destination, pin the connection to a validated public IP, and revalidate redirect hops. Private, loopback, link-local, and cloud-metadata targets are denied under the default policy. |
+| Crawl policy | Robots checks and politeness delays are enabled by default. Robots matching is prefix-only (`*` and `$` are unsupported); unavailable, server-error, oversized, or unreadable robots responses fail open with warnings. See [robots limits](docs/reference.md#fetchsource). Discovery supports links and sitemaps; the frontier currently runs sequentially. |
+| Replay | With a snapshot store, `mode: "replay"` reads captured snapshots without fetching pages again. Replay requires retained snapshots; it does not refresh their content. |
+| Citable snapshots | Each captured page has a `sourceRef`; exact-reference resolution checks the stored snapshot's identity and integrity. A reference identifies captured content, not the truth of a claim made from it. |
+| Rendering | Optional Playwright rendering handles JavaScript shells through pinned browser egress. Missing or failed rendering keeps the plain-fetch snapshot with a warning. |
+| Model calls | None in the acquisition core. Extraction and review belong to downstream consumers. |
 
-## Why it's different
-
-| | Typical crawler (Scrapy, Crawlee, Colly) | `forage` |
-|---|---|---|
-| Threat model | trusted seeds you choose | **untrusted, attacker-influenced URLs** |
-| SSRF / DNS-rebinding | not addressed (wrong threat model) | **pinned egress by default** — resolve once, validate the IP, freeze it; no rebinding window |
-| Cloud-metadata / internal targets | reachable | **hard-blocked** (169.254.169.254, `10.x`, loopback, link-local, NAT64…) |
-| Re-processing | re-crawl (or ad-hoc HTTP cache) | **deterministic replay** — crawl once, re-extract offline forever |
-| Downstream evidence | URL + timestamp | **per-page `sourceRef`** you can cite in a review UI |
-| AI in the core | — | **none** — pure deterministic mechanics (fast, testable, no model calls) |
-
-The crawling *mechanics* are commodity — `forage` leans on proven ideas and
-focused libraries for those (robots parsing, URL canonicalization, sitemaps,
-Crawlee's adaptive-render pattern). What it **owns** is the rare part: getting
-SSRF-with-rebinding *actually right* (a pin, not just a check — the hole most
-naive SSRF filters still have) and wiring provenance/replay for a human-review
-workflow.
+These are Forage's contracts, not a comparison of other crawlers' security or
+replay support. Choose crawl and retention policies for your application;
+Forage does not perform extraction checks or decide whether a proposed fact is
+correct. See [MVP policy support](#mvp-policy-support) for current crawl limits
+and [DESIGN.md](./DESIGN.md) for the egress and replay design.
 
 ## Safe by default
 
