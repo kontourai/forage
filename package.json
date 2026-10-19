@@ -56,7 +56,7 @@
     }
   },
   "devDependencies": {
-    "@ai-sdk/provider": "4.0.4",
+    "@ai-sdk/provider": "4.0.28",
     "@kontourai/flow-agents": "5.9.0",
     "@kontourai/veritas": "1.11.2",
     "@types/node": "^26.1.1",
