@@ -4,6 +4,7 @@
 # binary; without it esbuild has no executable to run. Bump the pin with the dep.
 allowBuilds:
   esbuild@0.28.1: true
+  esbuild@0.28.2: true
 
 # `playwright` is declared as an OPTIONAL peer (peerDependenciesMeta) and npm
 # never installed it — it is absent from the package-lock.json this lockfile was
