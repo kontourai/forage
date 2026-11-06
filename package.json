@@ -40,8 +40,8 @@
     "verify": "npm run typecheck && npm test && npm run test:release-tag-ancestry",
     "workflow:sidecar": "flow-agents-workflow-sidecar",
     "workflow:validate-artifacts": "flow-agents-validate-artifacts",
-    "docs:check": "npx -y github:kontourai/corpus#340b66fc8f723c1babe35fce8240c82cd196b0db corpus check",
-    "docs:build": "npx -y github:kontourai/corpus#340b66fc8f723c1babe35fce8240c82cd196b0db corpus build"
+    "docs:check": "npx -y --package=https://codeload.github.com/kontourai/corpus/tar.gz/b127e35a818b532369843731b3c64792baade83e -- corpus check",
+    "docs:build": "npx -y --package=https://codeload.github.com/kontourai/corpus/tar.gz/b127e35a818b532369843731b3c64792baade83e -- corpus build"
   },
   "license": "Apache-2.0",
   "publishConfig": {
