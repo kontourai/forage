@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/kontourai/forage/compare/v1.0.2...v1.0.3) (2026-11-06)
+
+
+### Documentation
+
+* map production inputs to canonical freshness reviews ([#93](https://github.com/kontourai/forage/issues/93)) ([5159135](https://github.com/kontourai/forage/commit/51591351e273276b0072268d11cb1af74e31307a))
+
 ## [1.0.2](https://github.com/kontourai/forage/compare/v1.0.1...v1.0.2) (2026-10-16)
 
 
