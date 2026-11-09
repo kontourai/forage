@@ -9,14 +9,14 @@ importers:
   .:
     devDependencies:
       '@ai-sdk/provider':
-        specifier: 4.0.28
-        version: 4.0.28
+        specifier: 4.0.36
+        version: 4.0.36
       '@kontourai/flow-agents':
-        specifier: 9.4.0
-        version: 9.4.0(@ai-sdk/provider@4.0.28)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)
+        specifier: 9.13.0
+        version: 9.13.0(@ai-sdk/provider@4.0.36)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)
       '@kontourai/veritas':
-        specifier: 1.11.4
-        version: 1.11.4(@kontourai/survey@8.2.0(typescript@7.0.2))
+        specifier: 1.12.2
+        version: 1.12.2(@kontourai/survey@8.4.0(typescript@7.0.2))
       '@types/node':
         specifier: ^26.1.1
         version: 26.6.6
@@ -26,12 +26,12 @@ importers:
 
 packages:
 
-  '@ai-sdk/provider@4.0.28':
-    resolution: {integrity: sha512-6ThcmkJQXSMlBrf6mirIjUUS04Q5/kApbYTOzd5lZfYXLa1XPpnDLxP/G96/DKc00fDIUOW9S2ls0mSzb0+l9w==}
+  '@ai-sdk/provider@4.0.36':
+    resolution: {integrity: sha512-GqvWZSZdBelCGughlBdOoupT258rgM3YMbaLAS9WSZJ0vlt8c9vm3My+ZT31mYhiReMCMCF2qF2axnGbILpk1A==}
     engines: {node: '>=22'}
 
-  '@anthropic-ai/sdk@0.116.0':
-    resolution: {integrity: sha512-4UEapYQ+epLEMsAuLZDvW8ExVSOtHD8a7zTyLzhw0H9RXJ1eilPgmqhjwgcdg22diwx13spw6fJ4rONZ+bS7Ww==}
+  '@anthropic-ai/sdk@1.6.0':
+    resolution: {integrity: sha512-XqiO/46n8S6So8jQ/6/uNCkHntyW6QHHs1gZ+hlwTx1fWDr929g4VmwIXfdMVk7SuBWNdQvAlwyi1G3t6SEIuQ==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -218,13 +218,13 @@ packages:
     resolution: {integrity: sha512-EiAd0KYVnysVy6I1lvW6vHoGTocLmG81HotMDsqJTIcqhMBImFAyojMs1qPqXrBnH/HpjrLI+yBlUSOzKtJwjw==}
     engines: {node: '>=22'}
 
-  '@kontourai/datum@0.8.0':
-    resolution: {integrity: sha512-aP12EVopTRNEuYYPCLeNAXFpTcKUpMO46lQoGRDOQ6M/8p27745bZlpSCKAW6IFetu5aHhNmm2Tn/hWlOIe34Q==}
+  '@kontourai/datum@0.8.1':
+    resolution: {integrity: sha512-TyO94LdVmk5WRRI97d+DSN8DmDfx7gNl6OKLcHKLOaei5hN0FKenroeuBwcq460WeKBD/teUjDePh427r+U7Bg==}
     engines: {node: '>=22'}
     hasBin: true
 
-  '@kontourai/dispatch@0.7.1':
-    resolution: {integrity: sha512-W+KgYYzrQphqhJFBEncdrqiU1o7jS/KusgsFn+7IGVlb/XhsU6Qfj25KNEw7mb44X4KySmjxcUpAQkzWlLT+pg==}
+  '@kontourai/dispatch@0.8.0':
+    resolution: {integrity: sha512-c/G78FZ1kQMi7OxpWCOtMhmvTqSgAMBlsWSOJyv1lJpG/5AgghPgOj9K3Mg78U8HOs373v+0EE94i8NQv/goLA==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -239,13 +239,18 @@ packages:
       '@kontourai/datum':
         optional: true
 
-  '@kontourai/flow-agents@9.4.0':
-    resolution: {integrity: sha512-C4Frlyo8ORaYq3NX+KRsZbwa9YnQdcC35M9gwQX6VyGGhtg++wLAExphxiPDgGEhffrm0yNHeD4TqcVgDkPtTg==}
+  '@kontourai/ferry@0.6.0':
+    resolution: {integrity: sha512-es7LSrxpKGHCMWBIwj+5RYE6Bx7FQymPgty1xktsleeb2nqBZ6u0UrNeP/4jyPtG2FjDvjQPxZbPmdkzHiZEZQ==}
     engines: {node: '>=22'}
     hasBin: true
 
-  '@kontourai/flow@5.2.0':
-    resolution: {integrity: sha512-tJ/XFrcKaLPnvv/2EIX9Db1cLEsnS4vbHMjULcVQHKMGz1cMNbvj/i1IXJVD4YWZ2I/0a6skN//NWUrlKX7F+w==}
+  '@kontourai/flow-agents@9.13.0':
+    resolution: {integrity: sha512-CNZPVHrt85FgxsXFxNq1Oi3/pIo3J9b8Zvp3OP4ePWyqGDLjiAdrzLJTHPc9HUoKMk5ZkAJkVHh1uiH5pnpB9Q==}
+    engines: {node: '>=22'}
+    hasBin: true
+
+  '@kontourai/flow@5.4.0':
+    resolution: {integrity: sha512-jGimrSdVxzEuI2NvQ++t2xmEEAXoXCXtHat2pfBTSsOAdXzn2OQbHO9WskpmuE6F7zvPrJrky7GUAVOtixDFRg==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -273,11 +278,6 @@ packages:
       '@anthropic-ai/sdk':
         optional: true
 
-  '@kontourai/surface@2.13.1':
-    resolution: {integrity: sha512-6XVOsQhfU6VFR0LBtVqsNSA4x4j+GvZfX7DBBstbhBaGu5SmlQ/YAWaPpHZ+nBIQnJNG3s+oyfzPjw6SOi9M6g==}
-    engines: {node: '>=22'}
-    hasBin: true
-
   '@kontourai/surface@2.14.0':
     resolution: {integrity: sha512-OiSOUHStjZvfWJe1nXXm3vfbgUvkc3Dc3THqTXbMK70wjKAHfDgz06TwBLeRp3oNJKEIh9xNDYCFT+TqQ7EYrQ==}
     engines: {node: '>=22'}
@@ -288,8 +288,13 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  '@kontourai/survey@8.2.0':
-    resolution: {integrity: sha512-7bDjdLKxR38POHumHzQXRS7nu6Ftu0nbwpCsnkEvOYL/xd8i8np94x+V3ftsd8tt4ZvNjbhdlf1tjZzFu8QfVQ==}
+  '@kontourai/surface@6.3.0':
+    resolution: {integrity: sha512-sWejbO0KRVuoCqn5mX6qGfJae4ovbN1ivWToq6sdUeWIhL0dl65tMD/CbIlwiEaBQ1/611RK6eFvEVJffgcuJw==}
+    engines: {node: '>=22'}
+    hasBin: true
+
+  '@kontourai/survey@8.4.0':
+    resolution: {integrity: sha512-ziY5IbQGw1TSLiLqv7GTxDTdd8PdssKZOQW/iHBLLnTJwSYi9gXuOq3No9hs+e1uOU37ZI+fnZtswXYUDS0HIQ==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -298,8 +303,12 @@ packages:
       typescript:
         optional: true
 
-  '@kontourai/veritas@1.11.4':
-    resolution: {integrity: sha512-dy784VPkRki4kC2BZXwUVbomrhCAfxow85ty8JuWcPoHcf8G+Kg+mEzG59zZKfXgxlTo9LYp1WQsxt4O8NsuQg==}
+  '@kontourai/thread@0.5.0':
+    resolution: {integrity: sha512-MhHKngKoKAWIEkvANx4YMrdYgBH5pRAGU3ocMiKRW1qcw6eluUyDB659vEgxFFcYy+FUXUrWb2EGt/7cI0WgIg==}
+    engines: {node: '>=22'}
+
+  '@kontourai/veritas@1.12.2':
+    resolution: {integrity: sha512-YSI4xCCib8bK8QQaX9uUHEDyBtMzKFGaF7pSzAxJaWd2V0rLaeKRSaw47b06+ju73c5Mb4Uy7ZN/hJMBXr1fVg==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -325,41 +334,25 @@ packages:
     resolution: {integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==}
     engines: {node: '>=20'}
 
-  '@npmcli/agent@4.0.2':
-    resolution: {integrity: sha512-EUEuWAxnL07Sp5/iC/1X6Xj+XThUvnbei9zfRWZdEXa7lss9RTHMhAHBeg+MZ5To9s/gGaSI+UwZTPdYMvKSeg==}
-    engines: {node: ^20.17.0 || >=22.9.0}
-
   '@npmcli/agent@5.0.2':
     resolution: {integrity: sha512-EkzGmEsgbQ1rqWkRJe2P0oQHx/ylZozDUNPMXCklLuSFL3GY+QyEfBUjhjCsgGXzh4OGpnHvkboSQgczjP/jJg==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
-
-  '@npmcli/fs@5.0.0':
-    resolution: {integrity: sha512-7OsC1gNORBEawOa5+j2pXN9vsicaIOH5cPXxoR6fJOmH6/EXpJB2CajXOu1fPRFun2m1lktEFX11+P89hqO/og==}
-    engines: {node: ^20.17.0 || >=22.9.0}
 
   '@npmcli/fs@6.0.0':
     resolution: {integrity: sha512-AheOs4swKka/XLtht6xxJDPezlQ7K2IYQ9Y8lST4JLDjnralnWuMM9AE2CdVcgQJ5omrXhsRzM7F7aYmeZBvKQ==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
 
-  '@npmcli/redact@4.0.0':
-    resolution: {integrity: sha512-gOBg5YHMfZy+TfHArfVogwgfBeQnKbbGo3pSUyK/gSI0AVu+pEiDVcKlQb0D8Mg1LNRZILZ6XG8I5dJ4KuAd9Q==}
-    engines: {node: ^20.17.0 || >=22.9.0}
-
   '@npmcli/redact@5.0.0':
     resolution: {integrity: sha512-3zcN5Q3yEmeyxXBzqB6fXPQFzYa2ROsGFSr69W0ArXIAGJqxl/aFECOVPD2kbkYPm0U/EHxFKgclK3UA9WQg5A==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
 
-  '@sigstore/bundle@4.0.0':
-    resolution: {integrity: sha512-NwCl5Y0V6Di0NexvkTqdoVfmjTaQwoLM236r89KEojGmq/jMls8S+zb7yOwAPdXvbwfKDlP+lmXgAL4vKSQT+A==}
-    engines: {node: ^20.17.0 || >=22.9.0}
+  '@opentelemetry/api@1.10.0':
+    resolution: {integrity: sha512-lMkyes8iHrG+mk6WH7X70MdCLI2RS0FwNBY1PyQ8UemaijE2m5mv5A0Niy3HtbYTFrgkUEQjFMXmSAk2hQDuPQ==}
+    engines: {node: '>=8.0.0'}
 
   '@sigstore/bundle@5.0.0':
     resolution: {integrity: sha512-wefjygudENbzbQMks1t5u34EP0fFoD0XvaEP7DOUP/sXKvogzEJYFw5E6pegGyp3onGWzVEYKVa3bNZWyTYX+A==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
-
-  '@sigstore/core@3.2.1':
-    resolution: {integrity: sha512-qRsxPnCrbC/puegGxKuynfnxgLiHqWStrSjxkoB4YKqq3Z3s4cyZyj42ZdWFAEblNP65C+rBH8EuREHIXoi83g==}
-    engines: {node: ^20.17.0 || >=22.9.0}
 
   '@sigstore/core@4.0.1':
     resolution: {integrity: sha512-9v5hRjujn5NXq8o7XFEUgLyAtdr5Iisb4pzM05u3K61IS5q3hP3luWAndk0RkPPLTUFoTbg7Vb84UQ1ZQeajWQ==}
@@ -369,17 +362,9 @@ packages:
     resolution: {integrity: sha512-/ScWUhhoFasJsSRGTVBwId1loQjjnjAfE4djL6ZhrXRpNCmPTnUKF5Jokd58ILseOMjzET3UrMOtJPS9sYeI0g==}
     engines: {node: ^18.17.0 || >=20.5.0}
 
-  '@sigstore/sign@4.1.1':
-    resolution: {integrity: sha512-Hf4xglukg0XXQ2RiD5vSoLjdPe8OBUPA8XeVjUObheuDcWdYWrnH/BNmxZCzkAy68MzmNCxXLeurJvs6hcP2OQ==}
-    engines: {node: ^20.17.0 || >=22.9.0}
-
   '@sigstore/sign@5.0.0':
     resolution: {integrity: sha512-DSFivqz9/i5AkwZ5fq0YdjaJlc4o1WeS2Zffon0kqtChx0vy4W9NOjkEet9bF2vkzOufX72eVH8kZBIGtcBp1w==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
-
-  '@sigstore/verify@3.1.1':
-    resolution: {integrity: sha512-qv7+G3J2cc6wwFj3yKvXOamzqhMwSk1ogPGmhpS8iXllcPrJaIIBA+4HbttlHVu1pqWTdmaCH/WE7UOC51kdoA==}
-    engines: {node: ^20.17.0 || >=22.9.0}
 
   '@sigstore/verify@4.1.2':
     resolution: {integrity: sha512-BfD9eLrz3A/DG58aSgfgZYmIR6V9Yw96QVN/frtu2bEH7ctSTk2TDvHU12un3JsDPBTqTNkqkIkucjxljpOFqQ==}
@@ -520,10 +505,6 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
-  agent-base@7.1.4:
-    resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
-    engines: {node: '>= 14'}
-
   agent-base@9.0.0:
     resolution: {integrity: sha512-TQf59BsZnytt8GdJKLPfUZ54g/iaUL2OWDSFCCvMOhsHduDQxO8xC4PNeyIkVcA5KwL2phPSv0douC0fgWzmnA==}
     engines: {node: '>= 20'}
@@ -556,10 +537,6 @@ packages:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
     engines: {node: '>= 0.8'}
 
-  cacache@20.0.4:
-    resolution: {integrity: sha512-M3Lab8NPYlZU2exsL3bMVvMrMqgwCnMWfdZbK28bn3pK6APT/Te/I8hjRPNu1uwORY9a1eEQoifXbKPQMfMTOA==}
-    engines: {node: ^20.17.0 || >=22.9.0}
-
   cacache@21.0.1:
     resolution: {integrity: sha512-pTwz/uj3Jyp6WXdJ6fWhR+7LVxVs6RyroQSn7KJwHsSxXuyGSp0pcMVcwSwTpCFq1X2YG8QBe0W+vN+cr0SwzA==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
@@ -571,6 +548,10 @@ packages:
   call-bound@1.0.4:
     resolution: {integrity: sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==}
     engines: {node: '>= 0.4'}
+
+  commander@15.1.0:
+    resolution: {integrity: sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ==}
+    engines: {node: '>=22.12.0'}
 
   content-disposition@2.0.1:
     resolution: {integrity: sha512-e+H0ZXHSWYrENhQzw1LPuP4oF5MzVKmDU6d3hxlvaPEYLLg62MxtQNPRx4SYSuYJSBUgnQIG4HIN2tEtNv7Dog==}
@@ -721,6 +702,10 @@ packages:
     resolution: {integrity: sha512-4YKLShbDKG+k52lJvH9shup7UYAX7pW+EA8c/4dx3RQFqCmORHl9gjJrM9vUljuTml/haTJgWYPd1G1MWmrm8Q==}
     hasBin: true
 
+  hachure@0.18.0:
+    resolution: {integrity: sha512-DnSAPYqUxPEehNLPBoFoRNGeCNo8JdeB/Yy6DOFBPJg5zo+WcxZSx5RiR/Y6BQCSPkOqS7H5DYwTcx5H9lBTmw==}
+    hasBin: true
+
   has-symbols@1.1.0:
     resolution: {integrity: sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==}
     engines: {node: '>= 0.4'}
@@ -740,17 +725,9 @@ packages:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
     engines: {node: '>= 0.8'}
 
-  http-proxy-agent@7.0.2:
-    resolution: {integrity: sha512-T1gkAiYYDWYx3V5Bmyu7HcfcvL7mUrTWiM6yOfa3PIphViJ/gFPbvidQ+veqSOHci/PxBcDabeUNCzpOODJZig==}
-    engines: {node: '>= 14'}
-
   http-proxy-agent@9.1.0:
     resolution: {integrity: sha512-2NxoveTT58mjYT4n3RPTEfCZGLMbidoO8XEieXfpSYxu+PQJ1qpx4ypwH6N+uF9twBPIvRRgvkvW5HUTYWENig==}
     engines: {node: '>= 20'}
-
-  https-proxy-agent@7.0.6:
-    resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
-    engines: {node: '>= 14'}
 
   https-proxy-agent@9.1.0:
     resolution: {integrity: sha512-ag87y7cJJ9/3+GxFr8Oy4O5faDsGRGnBGsJj/YjOSsSx/5eadKLYTMPlzuR6obgoCDDm0abAAZitXXQkMOPSpA==}
@@ -803,10 +780,6 @@ packages:
     resolution: {integrity: sha512-4pfM1Ff0x50o0tQwb5ucw/RzNyD0/YJME6IVcStalZuMWxdt3sR3huStTtxz4PUmvZfRguvDejasvQ2kifR11g==}
     engines: {node: 20 || >=22}
 
-  make-fetch-happen@15.0.6:
-    resolution: {integrity: sha512-Je0fLJ0F5atA7F+eIlLzk+Wkcl57JDf4kf+EW8xiP5E31xOQxkIxTbgf1Oi1Lw9tRI9UEMRdI5Vz2xTzoNU1Jw==}
-    engines: {node: ^20.17.0 || >=22.9.0}
-
   make-fetch-happen@16.0.1:
     resolution: {integrity: sha512-uUv1yxHzaKVVEPfcFeGSNov/Cehjv08ovlY8ImTljgL7Q+SiA0dAYLQ6SYVa2kkKqNj4Y3aZEI7xv2teadie0A==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
@@ -838,10 +811,6 @@ packages:
   minipass-collect@2.0.1:
     resolution: {integrity: sha512-D7V8PO9oaz7PWGLbCACuI1qEOsq7UKfLotx/C0Aet43fCUB/wfQ7DYeq2oR/svFJGYDHPr38SHATeaj/ZoKHKw==}
     engines: {node: '>=16 || 14 >=14.17'}
-
-  minipass-fetch@5.0.2:
-    resolution: {integrity: sha512-2d0q2a8eCi2IRg/IGubCNRJoYbA1+YPXAzQVRFmB45gdGZafyivnZ5YSEfo3JikbjGxOdntGFvBQGqaSMXlAFQ==}
-    engines: {node: ^20.17.0 || >=22.9.0}
 
   minipass-fetch@6.0.0:
     resolution: {integrity: sha512-AWI8bKapGmgx/J0E6IGYSKj8TiHebZkmKWSs8raPSw8KXwgEAJ+Bw3+LSdXHR6T/RHKAWCOYk2MiLrYluaUU6w==}
@@ -878,14 +847,15 @@ packages:
     resolution: {integrity: sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==}
     engines: {node: '>= 0.6'}
 
-  neo4j-driver-bolt-connection@5.28.3:
-    resolution: {integrity: sha512-wqHBYcU0FVRDmdsoZ+Fk0S/InYmu9/4BT6fPYh45Jimg/J7vQBUcdkiHGU7nop7HRb1ZgJmL305mJb6g5Bv35Q==}
+  neo4j-driver-bolt-connection@6.3.0:
+    resolution: {integrity: sha512-UFKE7Tl/9EVw79qtbnJsU+BDbK3OXSdnQA+PlRzTohM+pFdQYcE7+pP77sXUr7UVKoXWP5tZ+jr3TAnkCFsEiA==}
 
-  neo4j-driver-core@5.28.3:
-    resolution: {integrity: sha512-Jk+hAmjFmO5YzVH/U7FyKXigot9zmIfLz6SZQy0xfr4zfTE/S8fOYFOGqKQTHBE86HHOWH2RbTslbxIb+XtU2g==}
+  neo4j-driver-core@6.3.0:
+    resolution: {integrity: sha512-HS3J1dqzbppeVShCvb48NYE9N+qcAVvGxU15LF7uLlC09Cdn1mU10UHY0AUyUJ7aeYGpQMR9d4K3t0xmPlCyfA==}
 
-  neo4j-driver@5.28.3:
-    resolution: {integrity: sha512-k7c0wEh3HoONv1v5AyLp9/BDAbYHJhz2TZvzWstSEU3g3suQcXmKEaYBfrK2UMzxcy3bCT0DrnfRbzsOW5G/Ag==}
+  neo4j-driver@6.3.0:
+    resolution: {integrity: sha512-ky7Esn9sdwzwKXgQiuJ3veK5NJNpWhZDK6Qoi0JzKchJgexA5fyl1WMC0IvEFNIER/BrZQ/UfvR1JFz1m10ZRQ==}
+    engines: {node: '>=18.0.0'}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -931,10 +901,6 @@ packages:
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
-
-  proc-log@6.1.0:
-    resolution: {integrity: sha512-iG+GYldRf2BQ0UDUAd6JQ/RwzaQy6mXmsk/IzlYyal4A4SNFw54MeH4/tLkF4I5WoWG9SQwuqWzS99jaFQHBuQ==}
-    engines: {node: ^20.17.0 || >=22.9.0}
 
   proc-log@7.0.0:
     resolution: {integrity: sha512-FYgfaA69XZ93zaXLoMNQ+ViDXGGBgR8aLh03txzcFhV+9xOXx7+8DLCULrKKpR9+GsH9ZfHm82aSUPpozX0Ztg==}
@@ -1030,17 +996,9 @@ packages:
     resolution: {integrity: sha512-WlMj/67cEJ6MDI1OcsnjuYKDNDoyPCCYZ249kuuXPiMDw9F8PXkVaQ7YWu3siTydfQ/4BEZcvGzu+aYvz7dDCQ==}
     engines: {node: '>= 20'}
 
-  socks-proxy-agent@8.0.5:
-    resolution: {integrity: sha512-HehCEsotFqbPW9sJ8WVYB6UbmIMv7kUUORIF2Nncq4VQvBfNBLibW9YZR5dlYCSUhwcD628pRllm7n+E+YTzJw==}
-    engines: {node: '>= 14'}
-
   socks@2.8.9:
     resolution: {integrity: sha512-LJhUYUvItdQ0LkJTmPeaEObWXAqFyfmP85x0tch/ez9cahmhlBBLbIqDFnvBnUJGagb0JbIQrkBs1wJ+yRYpEw==}
     engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
-
-  ssri@13.0.1:
-    resolution: {integrity: sha512-QUiRf1+u9wPTL/76GTYlKttDEBWV1ga9ZXW8BG6kfdeyyM8LGPix9gROyg9V2+P0xNyF3X2Go526xKFdMZrHSQ==}
-    engines: {node: ^20.17.0 || >=22.9.0}
 
   ssri@14.0.0:
     resolution: {integrity: sha512-jQxKI0yx0ZnTKrqjKkLDV2DXkBQn3k49JVmVqDGcDwKDtGDbImD/GXsq04KD0VVzCQQ9wZJYal3RwR1GzWTSow==}
@@ -1115,12 +1073,13 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/provider@4.0.28':
+  '@ai-sdk/provider@4.0.36':
     dependencies:
       json-schema: 0.4.0
 
-  '@anthropic-ai/sdk@0.116.0(zod@4.6.7)':
+  '@anthropic-ai/sdk@1.6.0(zod@4.6.7)':
     dependencies:
+      '@opentelemetry/api': 1.10.0
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.1.1
     optionalDependencies:
@@ -1228,35 +1187,44 @@ snapshots:
 
   '@kontourai/conduit@0.7.1': {}
 
-  '@kontourai/datum@0.8.0':
+  '@kontourai/datum@0.8.1':
     dependencies:
       '@kontourai/bearing': 0.2.0
     transitivePeerDependencies:
       - playwright
 
-  '@kontourai/dispatch@0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.0)':
+  '@kontourai/dispatch@0.8.0(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@1.6.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.1)':
     dependencies:
-      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))
+      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@1.6.0(zod@4.6.7))
     optionalDependencies:
-      '@ai-sdk/provider': 4.0.28
+      '@ai-sdk/provider': 4.0.36
       '@kontourai/bearing': 0.2.0
-      '@kontourai/datum': 0.8.0
+      '@kontourai/datum': 0.8.1
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
 
-  '@kontourai/flow-agents@9.4.0(@ai-sdk/provider@4.0.28)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)':
+  '@kontourai/ferry@0.6.0':
+    dependencies:
+      '@kontourai/thread': 0.5.0
+      commander: 15.1.0
+      zod: 4.6.7
+
+  '@kontourai/flow-agents@9.13.0(@ai-sdk/provider@4.0.36)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)':
     dependencies:
       '@kontourai/conduit': 0.7.1
-      '@kontourai/datum': 0.8.0
-      '@kontourai/dispatch': 0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.0)
-      '@kontourai/flow': 5.2.0
-      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))
+      '@kontourai/datum': 0.8.1
+      '@kontourai/dispatch': 0.8.0(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@1.6.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.1)
+      '@kontourai/ferry': 0.6.0
+      '@kontourai/flow': 5.4.0
+      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@1.6.0(zod@4.6.7))
       '@kontourai/surface': 5.0.0
-      '@kontourai/survey': 8.2.0(typescript@7.0.2)
+      '@kontourai/surface-knowledge': '@kontourai/surface@6.3.0'
+      '@kontourai/survey': 8.4.0(typescript@7.0.2)
+      '@kontourai/thread': 0.5.0
       esbuild: 0.28.2
     optionalDependencies:
-      '@anthropic-ai/sdk': 0.116.0(zod@4.6.7)
-      neo4j-driver: 5.28.3
+      '@anthropic-ai/sdk': 1.6.0(zod@4.6.7)
+      neo4j-driver: 6.3.0
     transitivePeerDependencies:
       - '@ai-sdk/provider'
       - '@kontourai/bearing'
@@ -1266,7 +1234,7 @@ snapshots:
       - typescript
       - zod
 
-  '@kontourai/flow@5.2.0':
+  '@kontourai/flow@5.4.0':
     dependencies:
       '@kontourai/surface': 2.14.0
       ajv: 8.20.0
@@ -1280,18 +1248,11 @@ snapshots:
 
   '@kontourai/plumb@0.2.0': {}
 
-  '@kontourai/relay@0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))':
+  '@kontourai/relay@0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@1.6.0(zod@4.6.7))':
     dependencies:
-      '@ai-sdk/provider': 4.0.28
+      '@ai-sdk/provider': 4.0.36
     optionalDependencies:
-      '@anthropic-ai/sdk': 0.116.0(zod@4.6.7)
-
-  '@kontourai/surface@2.13.1':
-    optionalDependencies:
-      '@sigstore/sign': 4.1.1
-      '@sigstore/verify': 3.1.1
-    transitivePeerDependencies:
-      - supports-color
+      '@anthropic-ai/sdk': 1.6.0(zod@4.6.7)
 
   '@kontourai/surface@2.14.0':
     optionalDependencies:
@@ -1310,7 +1271,16 @@ snapshots:
       - kerberos
       - supports-color
 
-  '@kontourai/survey@8.2.0(typescript@7.0.2)':
+  '@kontourai/surface@6.3.0':
+    optionalDependencies:
+      '@sigstore/bundle': 5.0.0
+      '@sigstore/sign': 5.0.0
+      '@sigstore/verify': 4.1.2
+    transitivePeerDependencies:
+      - kerberos
+      - supports-color
+
+  '@kontourai/survey@8.4.0(typescript@7.0.2)':
     dependencies:
       '@kontourai/surface': 2.14.0
       '@modelcontextprotocol/server': 2.0.0
@@ -1321,20 +1291,25 @@ snapshots:
       - kerberos
       - supports-color
 
-  '@kontourai/veritas@1.11.4(@kontourai/survey@8.2.0(typescript@7.0.2))':
+  '@kontourai/thread@0.5.0':
+    dependencies:
+      zod: 4.6.7
+
+  '@kontourai/veritas@1.12.2(@kontourai/survey@8.4.0(typescript@7.0.2))':
     dependencies:
       '@kontourai/plumb': 0.2.0
-      '@kontourai/surface': 2.13.1
+      '@kontourai/surface': 6.3.0
       '@modelcontextprotocol/sdk': 1.32.1
       ajv: 8.20.0
       ajv-formats: 3.0.1
       cross-spawn: 7.0.6
-      hachure: 0.15.0
+      hachure: 0.18.0
       picomatch: 4.0.7
     optionalDependencies:
-      '@kontourai/survey': 8.2.0(typescript@7.0.2)
+      '@kontourai/survey': 8.4.0(typescript@7.0.2)
     transitivePeerDependencies:
       - '@cfworker/json-schema'
+      - kerberos
       - supports-color
 
   '@modelcontextprotocol/core@2.0.0':
@@ -1368,17 +1343,6 @@ snapshots:
       '@modelcontextprotocol/core': 2.0.0
       zod: 4.6.7
 
-  '@npmcli/agent@4.0.2':
-    dependencies:
-      agent-base: 7.1.4
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
-      lru-cache: 11.5.2
-      socks-proxy-agent: 8.0.5
-    transitivePeerDependencies:
-      - supports-color
-    optional: true
-
   '@npmcli/agent@5.0.2':
     dependencies:
       agent-base: 9.0.0
@@ -1391,25 +1355,15 @@ snapshots:
       - supports-color
     optional: true
 
-  '@npmcli/fs@5.0.0':
-    dependencies:
-      semver: 7.8.5
-    optional: true
-
   '@npmcli/fs@6.0.0':
     dependencies:
       semver: 7.8.5
     optional: true
 
-  '@npmcli/redact@4.0.0':
-    optional: true
-
   '@npmcli/redact@5.0.0':
     optional: true
 
-  '@sigstore/bundle@4.0.0':
-    dependencies:
-      '@sigstore/protobuf-specs': 0.5.1
+  '@opentelemetry/api@1.10.0':
     optional: true
 
   '@sigstore/bundle@5.0.0':
@@ -1417,25 +1371,10 @@ snapshots:
       '@sigstore/protobuf-specs': 0.5.1
     optional: true
 
-  '@sigstore/core@3.2.1':
-    optional: true
-
   '@sigstore/core@4.0.1':
     optional: true
 
   '@sigstore/protobuf-specs@0.5.1':
-    optional: true
-
-  '@sigstore/sign@4.1.1':
-    dependencies:
-      '@gar/promise-retry': 1.0.3
-      '@sigstore/bundle': 4.0.0
-      '@sigstore/core': 3.2.1
-      '@sigstore/protobuf-specs': 0.5.1
-      make-fetch-happen: 15.0.6
-      proc-log: 6.1.0
-    transitivePeerDependencies:
-      - supports-color
     optional: true
 
   '@sigstore/sign@5.0.0':
@@ -1449,13 +1388,6 @@ snapshots:
     transitivePeerDependencies:
       - kerberos
       - supports-color
-    optional: true
-
-  '@sigstore/verify@3.1.1':
-    dependencies:
-      '@sigstore/bundle': 4.0.0
-      '@sigstore/core': 3.2.1
-      '@sigstore/protobuf-specs': 0.5.1
     optional: true
 
   '@sigstore/verify@4.1.2':
@@ -1539,9 +1471,6 @@ snapshots:
 
   acorn@8.19.0: {}
 
-  agent-base@7.1.4:
-    optional: true
-
   agent-base@9.0.0:
     optional: true
 
@@ -1589,20 +1518,6 @@ snapshots:
 
   bytes@3.1.2: {}
 
-  cacache@20.0.4:
-    dependencies:
-      '@npmcli/fs': 5.0.0
-      fs-minipass: 3.0.3
-      glob: 13.0.6
-      lru-cache: 11.5.2
-      minipass: 7.1.3
-      minipass-collect: 2.0.1
-      minipass-flush: 1.0.7
-      minipass-pipeline: 1.2.4
-      p-map: 7.0.6
-      ssri: 13.0.1
-    optional: true
-
   cacache@21.0.1:
     dependencies:
       '@npmcli/fs': 6.0.0
@@ -1626,6 +1541,8 @@ snapshots:
     dependencies:
       call-bind-apply-helpers: 1.0.2
       get-intrinsic: 1.3.0
+
+  commander@15.1.0: {}
 
   content-disposition@2.0.1: {}
 
@@ -1814,6 +1731,8 @@ snapshots:
 
   hachure@0.15.0: {}
 
+  hachure@0.18.0: {}
+
   has-symbols@1.1.0: {}
 
   hasown@2.0.4:
@@ -1833,14 +1752,6 @@ snapshots:
       statuses: 2.0.2
       toidentifier: 1.0.1
 
-  http-proxy-agent@7.0.2:
-    dependencies:
-      agent-base: 7.1.4
-      debug: 4.4.3
-    transitivePeerDependencies:
-      - supports-color
-    optional: true
-
   http-proxy-agent@9.1.0:
     dependencies:
       agent-base: 9.0.0
@@ -1848,14 +1759,6 @@ snapshots:
       proxy-agent-negotiate: 1.1.0
     transitivePeerDependencies:
       - kerberos
-      - supports-color
-    optional: true
-
-  https-proxy-agent@7.0.6:
-    dependencies:
-      agent-base: 7.1.4
-      debug: 4.4.3
-    transitivePeerDependencies:
       - supports-color
     optional: true
 
@@ -1905,24 +1808,6 @@ snapshots:
   lru-cache@11.5.2:
     optional: true
 
-  make-fetch-happen@15.0.6:
-    dependencies:
-      '@gar/promise-retry': 1.0.3
-      '@npmcli/agent': 4.0.2
-      '@npmcli/redact': 4.0.0
-      cacache: 20.0.4
-      http-cache-semantics: 4.2.0
-      minipass: 7.1.3
-      minipass-fetch: 5.0.2
-      minipass-flush: 1.0.7
-      minipass-pipeline: 1.2.4
-      negotiator: 1.0.0
-      proc-log: 6.1.0
-      ssri: 13.0.1
-    transitivePeerDependencies:
-      - supports-color
-    optional: true
-
   make-fetch-happen@16.0.1:
     dependencies:
       '@gar/promise-retry': 1.0.3
@@ -1962,15 +1847,6 @@ snapshots:
   minipass-collect@2.0.1:
     dependencies:
       minipass: 7.1.3
-    optional: true
-
-  minipass-fetch@5.0.2:
-    dependencies:
-      minipass: 7.1.3
-      minipass-sized: 2.0.0
-      minizlib: 3.1.0
-    optionalDependencies:
-      iconv-lite: 0.7.3
     optional: true
 
   minipass-fetch@6.0.0:
@@ -2014,20 +1890,20 @@ snapshots:
 
   negotiator@1.0.0: {}
 
-  neo4j-driver-bolt-connection@5.28.3:
+  neo4j-driver-bolt-connection@6.3.0:
     dependencies:
       buffer: 6.0.3
-      neo4j-driver-core: 5.28.3
+      neo4j-driver-core: 6.3.0
       string_decoder: 1.3.0
     optional: true
 
-  neo4j-driver-core@5.28.3:
+  neo4j-driver-core@6.3.0:
     optional: true
 
-  neo4j-driver@5.28.3:
+  neo4j-driver@6.3.0:
     dependencies:
-      neo4j-driver-bolt-connection: 5.28.3
-      neo4j-driver-core: 5.28.3
+      neo4j-driver-bolt-connection: 6.3.0
+      neo4j-driver-core: 6.3.0
       rxjs: 7.8.2
     optional: true
 
@@ -2065,9 +1941,6 @@ snapshots:
   picomatch@4.0.7: {}
 
   pkce-challenge@5.0.1: {}
-
-  proc-log@6.1.0:
-    optional: true
 
   proc-log@7.0.0:
     optional: true
@@ -2192,24 +2065,10 @@ snapshots:
       - supports-color
     optional: true
 
-  socks-proxy-agent@8.0.5:
-    dependencies:
-      agent-base: 7.1.4
-      debug: 4.4.3
-      socks: 2.8.9
-    transitivePeerDependencies:
-      - supports-color
-    optional: true
-
   socks@2.8.9:
     dependencies:
       ip-address: 10.3.1
       smart-buffer: 4.2.0
-    optional: true
-
-  ssri@13.0.1:
-    dependencies:
-      minipass: 7.1.3
     optional: true
 
   ssri@14.0.0:
