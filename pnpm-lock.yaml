@@ -9,11 +9,11 @@ importers:
   .:
     devDependencies:
       '@ai-sdk/provider':
-        specifier: 4.0.28
-        version: 4.0.28
+        specifier: 4.0.36
+        version: 4.0.36
       '@kontourai/flow-agents':
         specifier: 9.4.0
-        version: 9.4.0(@ai-sdk/provider@4.0.28)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)
+        version: 9.4.0(@ai-sdk/provider@4.0.36)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)
       '@kontourai/veritas':
         specifier: 1.11.4
         version: 1.11.4(@kontourai/survey@8.2.0(typescript@7.0.2))
@@ -26,8 +26,8 @@ importers:
 
 packages:
 
-  '@ai-sdk/provider@4.0.28':
-    resolution: {integrity: sha512-6ThcmkJQXSMlBrf6mirIjUUS04Q5/kApbYTOzd5lZfYXLa1XPpnDLxP/G96/DKc00fDIUOW9S2ls0mSzb0+l9w==}
+  '@ai-sdk/provider@4.0.36':
+    resolution: {integrity: sha512-GqvWZSZdBelCGughlBdOoupT258rgM3YMbaLAS9WSZJ0vlt8c9vm3My+ZT31mYhiReMCMCF2qF2axnGbILpk1A==}
     engines: {node: '>=22'}
 
   '@anthropic-ai/sdk@0.116.0':
@@ -1115,7 +1115,7 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/provider@4.0.28':
+  '@ai-sdk/provider@4.0.36':
     dependencies:
       json-schema: 0.4.0
 
@@ -1234,23 +1234,23 @@ snapshots:
     transitivePeerDependencies:
       - playwright
 
-  '@kontourai/dispatch@0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.0)':
+  '@kontourai/dispatch@0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.0)':
     dependencies:
-      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))
+      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))
     optionalDependencies:
-      '@ai-sdk/provider': 4.0.28
+      '@ai-sdk/provider': 4.0.36
       '@kontourai/bearing': 0.2.0
       '@kontourai/datum': 0.8.0
     transitivePeerDependencies:
       - '@anthropic-ai/sdk'
 
-  '@kontourai/flow-agents@9.4.0(@ai-sdk/provider@4.0.28)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)':
+  '@kontourai/flow-agents@9.4.0(@ai-sdk/provider@4.0.36)(@kontourai/bearing@0.2.0)(typescript@7.0.2)(zod@4.6.7)':
     dependencies:
       '@kontourai/conduit': 0.7.1
       '@kontourai/datum': 0.8.0
-      '@kontourai/dispatch': 0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.0)
+      '@kontourai/dispatch': 0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))(@kontourai/bearing@0.2.0)(@kontourai/datum@0.8.0)
       '@kontourai/flow': 5.2.0
-      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))
+      '@kontourai/relay': 0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))
       '@kontourai/surface': 5.0.0
       '@kontourai/survey': 8.2.0(typescript@7.0.2)
       esbuild: 0.28.2
@@ -1280,9 +1280,9 @@ snapshots:
 
   '@kontourai/plumb@0.2.0': {}
 
-  '@kontourai/relay@0.7.1(@ai-sdk/provider@4.0.28)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))':
+  '@kontourai/relay@0.7.1(@ai-sdk/provider@4.0.36)(@anthropic-ai/sdk@0.116.0(zod@4.6.7))':
     dependencies:
-      '@ai-sdk/provider': 4.0.28
+      '@ai-sdk/provider': 4.0.36
     optionalDependencies:
       '@anthropic-ai/sdk': 0.116.0(zod@4.6.7)
 
